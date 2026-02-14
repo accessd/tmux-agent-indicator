@@ -6,7 +6,7 @@ Stateful tmux plugin for AI agent workflows (Claude Code, Codex, and custom wrap
 
 - Pane visuals by state: `running`, `needs-input`, `done`.
 - Per-agent status icons (for example `claude=🤖`, `codex=🧠`).
-- Done marker on window title style, cleared on `pane-focus-in`.
+- Window title style markers for `needs-input`/`done`, cleared on focus change.
 - Optional deferred pane reset: keep pane colors until focus, not when hook fires.
 - Works with both `status-left/right` and `minimal-tmux-status-right`.
 
@@ -76,8 +76,8 @@ set -g @agent-indicator-running-window-title-fg ''
 set -g @agent-indicator-needs-input-enabled 'on'
 set -g @agent-indicator-needs-input-bg 'colour94'
 set -g @agent-indicator-needs-input-border 'yellow'
-set -g @agent-indicator-needs-input-window-title-bg ''
-set -g @agent-indicator-needs-input-window-title-fg ''
+set -g @agent-indicator-needs-input-window-title-bg 'yellow'
+set -g @agent-indicator-needs-input-window-title-fg 'black'
 
 # Done state (default pane background is green)
 set -g @agent-indicator-done-enabled 'on'

@@ -73,6 +73,7 @@ default_state_border() {
 
 default_state_title_bg() {
     case "$1" in
+        needs-input) printf 'yellow\n' ;;
         done) printf 'red\n' ;;
         *) printf '\n' ;;
     esac
@@ -80,6 +81,7 @@ default_state_title_bg() {
 
 default_state_title_fg() {
     case "$1" in
+        needs-input) printf 'black\n' ;;
         done) printf 'black\n' ;;
         *) printf '\n' ;;
     esac
