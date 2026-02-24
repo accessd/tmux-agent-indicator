@@ -9,7 +9,7 @@ Usage: agent-state.sh --agent <name> --state <running|needs-input|done|off>
 EOF
 }
 
-if ! command -v tmux >/dev/null 2>&1; then
+if ! command -v tmux >/dev/null 2>&1 || [ -z "${TMUX:-}" ]; then
     exit 0
 fi
 
