@@ -176,13 +176,23 @@ restore_active_border_style() {
 
 reset_pane_style() {
     local pane_id="$1"
+    local active
+    active=$(tmux display-message -p '#{pane_id}')
     tmux select-pane -t "$pane_id" -P "bg=default"
+    if [ "$pane_id" != "$active" ]; then
+        tmux select-pane -t "$active"
+    fi
 }
 
 apply_pane_style() {
     local pane_id="$1"
     local bg="$2"
+    local active
+    active=$(tmux display-message -p '#{pane_id}')
     tmux select-pane -t "$pane_id" -P "bg=$bg"
+    if [ "$pane_id" != "$active" ]; then
+        tmux select-pane -t "$active"
+    fi
 }
 
 pane_exists() {
