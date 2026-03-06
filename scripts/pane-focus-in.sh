@@ -44,6 +44,7 @@ get_highest_urgency_icon_for_window() {
     local window_id="$1"
     local needs_input_icon="$2"
     local done_icon="$3"
+    local exclude_pane="${4:-}"
     local has_needs_input=0
     local has_done=0
     local line pane_candidate pane_state pane_window
@@ -52,6 +53,7 @@ get_highest_urgency_icon_for_window() {
         [ -z "$line" ] && continue
         pane_candidate="${line#TMUX_AGENT_PANE_}"
         pane_candidate="${pane_candidate%%_STATE=*}"
+        [ "$pane_candidate" = "$exclude_pane" ] && continue
         pane_window=$(tmux display-message -p -t "$pane_candidate" '#{window_id}' 2>/dev/null || true)
         [ "$pane_window" != "$window_id" ] && continue
         pane_state="${line#*_STATE=}"
@@ -70,6 +72,7 @@ get_highest_urgency_icon_for_window() {
 
 clear_window_name_icon() {
     local window_id="$1"
+    local exclude_pane="${2:-}"
 
     local orig_key="TMUX_AGENT_WINDOW_${window_id}_ORIG_NAME"
     local auto_rename_key="TMUX_AGENT_WINDOW_${window_id}_ORIG_AUTOMATIC_RENAME"
@@ -91,7 +94,7 @@ clear_window_name_icon() {
     # Multi-pane scan: if another pane still has an icon-worthy state, re-apply.
     if is_enabled "$wn_enabled"; then
         local winning_icon
-        winning_icon=$(get_highest_urgency_icon_for_window "$window_id" "$needs_input_icon" "$done_icon")
+        winning_icon=$(get_highest_urgency_icon_for_window "$window_id" "$needs_input_icon" "$done_icon" "$exclude_pane")
         if [ -n "$winning_icon" ]; then
             tmux rename-window -t "$window_id" "${orig_name} ${winning_icon}" 2>/dev/null || true
             return
@@ -199,13 +202,13 @@ if [ "$state" = "needs-input" ]; then
     restore_window_title_style "$window_id"
     tmux select-pane -t "$pane_id" -P "bg=default"
     restore_window_option "$window_id" "pane-active-border-style" "$window_border_key"
-    clear_window_name_icon "$window_id"
+    clear_window_name_icon "$window_id" "$pane_id"
 fi
 
 if [ "$window_done" = "1" ] || [ "$state" = "done" ] || [ "$done_marker" = "1" ]; then
     restore_window_title_style "$done_window"
     restore_window_option "$done_window" "pane-active-border-style" "$done_window_border_key"
-    clear_window_name_icon "$done_window"
+    clear_window_name_icon "$done_window" "$pane_id"
     tmux_unset_env "$done_window_done_key"
     tmux_unset_env "$done_key"
     tmux_unset_env "$done_window_key"
