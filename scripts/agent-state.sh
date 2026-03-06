@@ -585,7 +585,11 @@ case "$state" in
             apply_window_title_style "$window_id" "$state_title_bg" "$state_title_fg"
         fi
         start_animation
-        apply_window_name_icon "$window_id" ""
+        if [ "$window_id" != "$active_window_id" ]; then
+            apply_window_name_icon "$window_id" ""
+        else
+            clear_window_name_icon "$window_id"
+        fi
         notify_state_change "$agent" "$state" "$pane_id"
         ;;
     needs-input)
@@ -627,7 +631,11 @@ case "$state" in
         if [ "$window_id" != "$active_window_id" ]; then
             apply_window_title_style "$window_id" "$state_title_bg" "$state_title_fg"
         fi
-        apply_window_name_icon "$window_id" "$DEFAULT_NEEDS_INPUT_ICON"
+        if [ "$window_id" != "$active_window_id" ]; then
+            apply_window_name_icon "$window_id" "$DEFAULT_NEEDS_INPUT_ICON"
+        else
+            clear_window_name_icon "$window_id"
+        fi
         notify_state_change "$agent" "$state" "$pane_id"
         ;;
     done)
@@ -663,7 +671,11 @@ case "$state" in
         if [ "$window_id" != "$active_window_id" ]; then
             apply_window_title_style "$window_id" "$state_title_bg" "$state_title_fg" "done"
         fi
-        apply_window_name_icon "$window_id" "$DEFAULT_DONE_ICON"
+        if [ "$window_id" != "$active_window_id" ]; then
+            apply_window_name_icon "$window_id" "$DEFAULT_DONE_ICON"
+        else
+            clear_window_name_icon "$window_id"
+        fi
         notify_state_change "$agent" "$state" "$pane_id"
 
         if is_enabled "$reset_on_focus"; then
