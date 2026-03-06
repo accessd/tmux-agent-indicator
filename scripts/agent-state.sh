@@ -160,6 +160,153 @@ clear_window_title_style() {
     tmux_unset_env "$done_key"
 }
 
+# --- Window-name icon functions ------------------------------------------------
+
+# All known icon characters used for stripping suffixes.
+DEFAULT_NEEDS_INPUT_ICON=""
+DEFAULT_DONE_ICON=""
+
+get_highest_urgency_icon() {
+    local window_id="$1"
+    local needs_input_icon="$2"
+    local done_icon="$3"
+    local has_needs_input=0
+    local has_done=0
+    local line pane_candidate pane_state
+
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        pane_candidate="${line#TMUX_AGENT_PANE_}"
+        pane_candidate="${pane_candidate%%_STATE=*}"
+        # Check this pane belongs to the target window.
+        local pane_window
+        pane_window=$(tmux display-message -p -t "$pane_candidate" '#{window_id}' 2>/dev/null || true)
+        [ "$pane_window" != "$window_id" ] && continue
+        pane_state="${line#*_STATE=}"
+        case "$pane_state" in
+            needs-input) has_needs_input=1 ;;
+            done) has_done=1 ;;
+        esac
+    done < <(tmux show-environment -g 2>/dev/null | grep "^TMUX_AGENT_PANE_.*_STATE=" || true)
+
+    if [ "$has_needs_input" = "1" ]; then
+        printf '%s\n' "$needs_input_icon"
+    elif [ "$has_done" = "1" ]; then
+        printf '%s\n' "$done_icon"
+    fi
+}
+
+apply_window_name_icon() {
+    local window_id="$1"
+    # $2 (icon hint) is unused; multi-pane scan determines the winning icon.
+
+    local wn_enabled
+    wn_enabled=$(tmux_get_option_or_default "@agent-indicator-window-name-enabled" "on")
+    if ! is_enabled "$wn_enabled"; then
+        return
+    fi
+
+    local needs_input_icon done_icon
+    needs_input_icon=$(tmux_get_option_or_default "@agent-indicator-needs-input-icon" "$DEFAULT_NEEDS_INPUT_ICON")
+    done_icon=$(tmux_get_option_or_default "@agent-indicator-done-icon" "$DEFAULT_DONE_ICON")
+
+    # Multi-pane scan: pick highest-urgency icon across all panes in this window.
+    local winning_icon
+    winning_icon=$(get_highest_urgency_icon "$window_id" "$needs_input_icon" "$done_icon")
+
+    # If no pane has an icon-worthy state, clear instead.
+    if [ -z "$winning_icon" ]; then
+        clear_window_name_icon "$window_id"
+        return
+    fi
+
+    local current_name base_name
+    current_name=$(tmux display-message -p -t "$window_id" '#{window_name}')
+
+    # Strip any existing icon suffix (space + known icon at end).
+    base_name="$current_name"
+    base_name="${base_name% "${needs_input_icon}"}"
+    base_name="${base_name% "${done_icon}"}"
+
+    local orig_key="TMUX_AGENT_WINDOW_${window_id}_ORIG_NAME"
+    local auto_rename_key="TMUX_AGENT_WINDOW_${window_id}_ORIG_AUTOMATIC_RENAME"
+    local existing_orig
+    existing_orig=$(tmux_get_env "$orig_key")
+
+    # Save original name only once.
+    if [ -z "$existing_orig" ]; then
+        tmux_set_env "$orig_key" "$base_name"
+    else
+        base_name="$existing_orig"
+    fi
+
+    # Save and disable automatic-rename.
+    local existing_auto
+    existing_auto=$(tmux_get_env "$auto_rename_key")
+    if [ -z "$existing_auto" ]; then
+        local auto_val
+        auto_val=$(tmux show-window-option -qvt "$window_id" "automatic-rename" 2>/dev/null || true)
+        if [ -z "$auto_val" ]; then
+            tmux_set_env "$auto_rename_key" "__UNSET__"
+        else
+            tmux_set_env "$auto_rename_key" "$auto_val"
+        fi
+    fi
+    tmux set-window-option -t "$window_id" automatic-rename off 2>/dev/null || true
+
+    tmux rename-window -t "$window_id" "${base_name} ${winning_icon}" 2>/dev/null || true
+}
+
+clear_window_name_icon() {
+    local window_id="$1"
+
+    local orig_key="TMUX_AGENT_WINDOW_${window_id}_ORIG_NAME"
+    local auto_rename_key="TMUX_AGENT_WINDOW_${window_id}_ORIG_AUTOMATIC_RENAME"
+    local marker="__UNSET__"
+
+    local orig_name
+    orig_name=$(tmux_get_env "$orig_key")
+    if [ -z "$orig_name" ]; then
+        return
+    fi
+
+    local wn_enabled
+    wn_enabled=$(tmux_get_option_or_default "@agent-indicator-window-name-enabled" "on")
+
+    local needs_input_icon done_icon
+    needs_input_icon=$(tmux_get_option_or_default "@agent-indicator-needs-input-icon" "$DEFAULT_NEEDS_INPUT_ICON")
+    done_icon=$(tmux_get_option_or_default "@agent-indicator-done-icon" "$DEFAULT_DONE_ICON")
+
+    # Multi-pane scan: if another pane still has an icon-worthy state, re-apply instead.
+    if is_enabled "$wn_enabled"; then
+        local winning_icon
+        winning_icon=$(get_highest_urgency_icon "$window_id" "$needs_input_icon" "$done_icon")
+        if [ -n "$winning_icon" ]; then
+            tmux rename-window -t "$window_id" "${orig_name} ${winning_icon}" 2>/dev/null || true
+            return
+        fi
+    fi
+
+    # Restore original name.
+    tmux rename-window -t "$window_id" "$orig_name" 2>/dev/null || true
+
+    # Restore automatic-rename.
+    local saved_auto
+    saved_auto=$(tmux_get_env "$auto_rename_key")
+    if [ -n "$saved_auto" ]; then
+        if [ "$saved_auto" = "$marker" ]; then
+            tmux set-window-option -t "$window_id" -u automatic-rename 2>/dev/null || true
+        else
+            tmux set-window-option -t "$window_id" automatic-rename "$saved_auto" 2>/dev/null || true
+        fi
+    fi
+
+    tmux_unset_env "$orig_key"
+    tmux_unset_env "$auto_rename_key"
+}
+
+# --- Border style functions ---------------------------------------------------
+
 apply_active_border_style() {
     local window_id="$1"
     local border="$2"
@@ -438,6 +585,7 @@ case "$state" in
             apply_window_title_style "$window_id" "$state_title_bg" "$state_title_fg"
         fi
         start_animation
+        apply_window_name_icon "$window_id" ""
         notify_state_change "$agent" "$state" "$pane_id"
         ;;
     needs-input)
@@ -479,6 +627,7 @@ case "$state" in
         if [ "$window_id" != "$active_window_id" ]; then
             apply_window_title_style "$window_id" "$state_title_bg" "$state_title_fg"
         fi
+        apply_window_name_icon "$window_id" "$DEFAULT_NEEDS_INPUT_ICON"
         notify_state_change "$agent" "$state" "$pane_id"
         ;;
     done)
@@ -514,6 +663,7 @@ case "$state" in
         if [ "$window_id" != "$active_window_id" ]; then
             apply_window_title_style "$window_id" "$state_title_bg" "$state_title_fg" "done"
         fi
+        apply_window_name_icon "$window_id" "$DEFAULT_DONE_ICON"
         notify_state_change "$agent" "$state" "$pane_id"
 
         if is_enabled "$reset_on_focus"; then
@@ -523,6 +673,7 @@ case "$state" in
             reset_pane_style "$pane_id"
             restore_active_border_style "$window_id"
             clear_window_title_style "$window_id"
+            clear_window_name_icon "$window_id"
             tmux_unset_env "$done_key"
             tmux_unset_env "$done_window_key"
             tmux_unset_env "$state_key"
@@ -540,6 +691,7 @@ case "$state" in
         tmux_unset_env "TMUX_AGENT_ACTIVE_PANE_${agent}"
         reset_pane_style "$pane_id"
         restore_active_border_style "$window_id"
+        clear_window_name_icon "$window_id"
         ;;
 esac
 
