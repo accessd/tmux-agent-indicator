@@ -163,7 +163,7 @@ clear_window_title_style() {
 # --- Window-name icon functions ------------------------------------------------
 
 # All known icon characters used for stripping suffixes.
-DEFAULT_NEEDS_INPUT_ICON=""
+DEFAULT_NEEDS_INPUT_ICON=""
 DEFAULT_DONE_ICON=""
 
 get_highest_urgency_icon() {

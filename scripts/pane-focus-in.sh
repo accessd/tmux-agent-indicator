@@ -37,7 +37,7 @@ is_enabled() {
     esac
 }
 
-DEFAULT_NEEDS_INPUT_ICON=""
+DEFAULT_NEEDS_INPUT_ICON=""
 DEFAULT_DONE_ICON=""
 
 get_highest_urgency_icon_for_window() {
