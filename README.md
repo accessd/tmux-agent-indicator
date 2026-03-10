@@ -99,6 +99,17 @@ Optional visual session indicator in the status bar. Shows all sessions as symbo
 
 Example with 4 sessions, second is current, fourth needs attention: `○●○●`
 
+With emoji symbols:
+
+<img width="2518" alt="session dots full status bar" src="https://github.com/user-attachments/assets/565fe020-85bb-4c1c-96a6-2571c3b40019" />
+<img width="163" alt="session dots close up" src="https://github.com/user-attachments/assets/8fbf3776-3f1b-42b5-a0b3-b94ba2bce861" />
+
+```tmux
+set -g @agent-indicator-session-dots-active '🌕'
+set -g @agent-indicator-session-dots-inactive '🌑'
+set -g @agent-indicator-session-dots-attention '🤖'
+```
+
 Add `#{agent_session_dots}` to your status bar:
 
 ```tmux
