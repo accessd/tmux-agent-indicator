@@ -81,7 +81,7 @@ window_border_key="TMUX_AGENT_WINDOW_${window_id}_ORIG_ACTIVE_BORDER_STYLE"
 
 pending_reset=$(tmux_get_env "$pending_reset_key")
 if [ "$pending_reset" = "1" ]; then
-    tmux select-pane -t "$pane_id" -P "bg=default"
+    tmux set-option -p -t "$pane_id" window-style "bg=default"
     restore_window_option "$window_id" "pane-active-border-style" "$window_border_key"
     tmux_unset_env "$pending_reset_key"
 fi
@@ -99,7 +99,7 @@ done_window_border_key="TMUX_AGENT_WINDOW_${done_window}_ORIG_ACTIVE_BORDER_STYL
 # Needs-input visuals are cleared when focus returns to the source pane/window.
 if [ "$state" = "needs-input" ]; then
     restore_window_title_style "$window_id"
-    tmux select-pane -t "$pane_id" -P "bg=default"
+    tmux set-option -p -t "$pane_id" window-style "bg=default"
     restore_window_option "$window_id" "pane-active-border-style" "$window_border_key"
 fi
 
