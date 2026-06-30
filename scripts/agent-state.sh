@@ -369,6 +369,17 @@ esac
 
 pane_id=$(resolve_target_pane "$agent")
 window_id=$(tmux display-message -p -t "$pane_id" '#{window_id}')
+
+# A resolved pane can die between resolve_target_pane's existence check and
+# here (e.g. the agent's pane closes as its Stop hook fires `done`). That
+# leaves window_id empty, and the apply paths below would fall through to
+# `set-window-option -t ""`, which tmux applies to the *current* window --
+# painting an unrelated window with bookkeeping keyed to the empty id, so
+# focus-in can never clear it. No live target means nothing to do.
+if [ -z "$window_id" ]; then
+    exit 0
+fi
+
 active_window_id=$(tmux display-message -p '#{window_id}')
 active_pane_id=$(tmux display-message -p '#{pane_id}')
 
