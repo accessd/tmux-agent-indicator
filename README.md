@@ -18,7 +18,7 @@ When the agent finishes, the window title background/foreground changes and the 
 
 The plugin tracks three states per pane: `running`, `needs-input`, and `done`.
 
-State transitions are driven by hooks. Claude Code fires hooks on prompt submit, permission request, and stop. Codex uses its `notify` command. OpenCode uses its plugin system. Any other agent can call `agent-state.sh` directly from a wrapper script or hook.
+State transitions are driven by hooks. Claude Code and Codex fire hooks on prompt submit, permission request, and stop. OpenCode uses its plugin system. Any other agent can call `agent-state.sh` directly from a wrapper script or hook.
 
 Each state can change:
 - Pane border color
@@ -56,8 +56,10 @@ bash ~/.tmux/plugins/tmux-agent-indicator/setup.sh
 
 This installs files to `~/.tmux/plugins/tmux-agent-indicator` and updates:
 - `~/.claude/settings.json` hooks for Claude (`UserPromptSubmit`, `PermissionRequest`, `Stop`)
-- `~/.codex/config.toml` `notify` command for Codex
+- `~/.codex/hooks.json` hooks for Codex (`UserPromptSubmit`, `PermissionRequest`, `Stop`)
 - `~/.config/opencode/plugins/` plugin for OpenCode
+
+After installing Codex hooks, run `/hooks` in Codex and trust the tmux-agent-indicator hook definitions before they can run.
 
 Integration uninstall options:
 
@@ -368,13 +370,20 @@ To integrate any agent that does not have built-in hook support, call `agent-sta
 
 `--state off` always resets pane background and border immediately.
 
-## Claude Hook Template
+## Hook Templates
 
-Default template file: `hooks/claude-hooks.json`
-It maps:
+Default template files:
+- `hooks/claude-hooks.json`
+- `hooks/codex-hooks.json`
+
+The installer uses these templates as the source for Claude and Codex hook configuration, replacing the default plugin path with the selected install target.
+
+They map:
 - `UserPromptSubmit` -> `running`
 - `PermissionRequest` -> `needs-input`
 - `Stop` -> `done`
+
+Codex hooks must be reviewed and trusted with `/hooks` before they can run.
 
 ## OpenCode Plugin
 
