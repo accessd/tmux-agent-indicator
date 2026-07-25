@@ -1,5 +1,7 @@
 # tmux-agent-indicator
 
+[![CI](https://github.com/accessd/tmux-agent-indicator/actions/workflows/ci.yml/badge.svg)](https://github.com/accessd/tmux-agent-indicator/actions/workflows/ci.yml)
+
 AI agents run in tmux panes but give no signal when they finish or need input. You have to keep switching panes to check. This plugin tracks agent state and surfaces it through pane borders, window titles, and status bar icons so you never miss a transition.
 
 ## Demo

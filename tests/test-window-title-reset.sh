@@ -9,7 +9,7 @@ trap cleanup_test_server EXIT
 
 setup_test_server "window-title-reset"
 create_other_window
-tmux_cmd select-window -t ai:main
+tmux_cmd select-window -t ai:other
 
 run_state needs-input
 before_style="$(get_window_option "$WIN" "window-status-style")"
@@ -17,7 +17,6 @@ before_current_style="$(get_window_option "$WIN" "window-status-current-style")"
 assert_non_empty "$before_style" "window-status-style should be set in needs-input"
 assert_non_empty "$before_current_style" "window-status-current-style should be set in needs-input"
 
-tmux_cmd select-window -t ai:other
 sleep 0.1
 
 while_away_style="$(get_window_option "$WIN" "window-status-style")"

@@ -20,7 +20,7 @@
       @agent-indicator-notification-command
   )
 
-  for state in running needs-input done; do
+  for state in running needs-input "done"; do
       options+=(
           "@agent-indicator-${state}-enabled"
           "@agent-indicator-${state}-bg"
