@@ -142,11 +142,12 @@ if [ "$INSTALL_OPENCODE" = true ] && [ "$UNINSTALL_OPENCODE" = false ]; then
     fi
 fi
 
-mkdir -p "$TARGET_DIR/scripts" "$TARGET_DIR/hooks" "$TARGET_DIR/plugins"
+mkdir -p "$TARGET_DIR/scripts" "$TARGET_DIR/hooks" "$TARGET_DIR/plugins" "$TARGET_DIR/licenses"
 
 cp "$SCRIPT_DIR/agent-indicator.tmux" "$TARGET_DIR/"
 cp "$SCRIPT_DIR/README.md" "$TARGET_DIR/"
 cp "$SCRIPT_DIR/LICENSE" "$TARGET_DIR/"
+cp "$SCRIPT_DIR/licenses/"*.txt "$TARGET_DIR/licenses/"
 cp "$SCRIPT_DIR/scripts/"*.sh "$TARGET_DIR/scripts/"
 cp "$SCRIPT_DIR/scripts/"*.py "$TARGET_DIR/scripts/"
 cp "$SCRIPT_DIR/hooks/"*.json "$TARGET_DIR/hooks/"
