@@ -8,6 +8,9 @@
       @agent-indicator-reset-on-focus
       @agent-indicator-processes
       @agent-indicator-icons
+      @agent-indicator-limits-enabled
+      @agent-indicator-limits-providers
+      @agent-indicator-limits-cache-seconds
       @agent-indicator-animation-enabled
       @agent-indicator-animation-speed
       @agent-indicator-notification-enabled
