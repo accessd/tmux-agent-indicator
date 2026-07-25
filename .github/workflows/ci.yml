@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck
+
+      - name: Check Bash syntax
+        run: bash -n agent-indicator.tmux scripts/*.sh install.sh setup.sh tests/*.sh tests/lib/*.sh
+
+      - name: Run ShellCheck
+        run: shellcheck -x -S warning agent-indicator.tmux scripts/*.sh install.sh setup.sh tests/*.sh tests/lib/*.sh
+
+      - name: Check Python syntax
+        run: python3 -m py_compile scripts/agent-limits.py
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ripgrep tmux
+
+      - name: Run tests
+        run: ./tests/run-all.sh

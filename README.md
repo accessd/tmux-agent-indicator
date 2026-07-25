@@ -1,5 +1,7 @@
 # tmux-agent-indicator
 
+[![CI](https://github.com/accessd/tmux-agent-indicator/actions/workflows/ci.yml/badge.svg)](https://github.com/accessd/tmux-agent-indicator/actions/workflows/ci.yml)
+
 AI agents run in tmux panes but give no signal when they finish or need input. You have to keep switching panes to check. This plugin tracks agent state and surfaces it through pane borders, window titles, and status bar icons so you never miss a transition.
 
 ## Demo
@@ -16,7 +18,7 @@ When the agent finishes, the window title background/foreground changes and the 
 
 The plugin tracks three states per pane: `running`, `needs-input`, and `done`.
 
-State transitions are driven by hooks. Claude Code fires hooks on prompt submit, permission request, and stop. Codex uses its `notify` command. OpenCode uses its plugin system. Any other agent can call `agent-state.sh` directly from a wrapper script or hook.
+State transitions are driven by hooks. Claude Code and Codex fire hooks on prompt submit, permission request, and stop. OpenCode uses its plugin system. Any other agent can call `agent-state.sh` directly from a wrapper script or hook.
 
 Each state can change:
 - Pane border color
@@ -36,7 +38,7 @@ States reset when you focus the pane/window, or on the next transition.
 
 ## Requirements
 
-tmux 3.1+, bash 4+
+tmux 3.1+, bash 4+, Python 3
 
 ## Installation
 
@@ -54,8 +56,10 @@ bash ~/.tmux/plugins/tmux-agent-indicator/setup.sh
 
 This installs files to `~/.tmux/plugins/tmux-agent-indicator` and updates:
 - `~/.claude/settings.json` hooks for Claude (`UserPromptSubmit`, `PermissionRequest`, `Stop`)
-- `~/.codex/config.toml` `notify` command for Codex
+- `~/.codex/hooks.json` hooks for Codex (`UserPromptSubmit`, `PermissionRequest`, `Stop`)
 - `~/.config/opencode/plugins/` plugin for OpenCode
+
+After installing Codex hooks, run `/hooks` in Codex and trust the tmux-agent-indicator hook definitions before they can run.
 
 Integration uninstall options:
 
@@ -84,14 +88,41 @@ tmux source-file ~/.tmux.conf
 For native status:
 
 ```tmux
-set -g status-right '#{agent_indicator} | %H:%M'
+set -g status-right '#{agent_limits} #{agent_indicator} | %H:%M'
 ```
 
 For [minimal-tmux-status](https://github.com/niksingh710/minimal-tmux-status):
 
 ```tmux
-set -g @minimal-tmux-status-right '#{agent_indicator} #(gitmux "#{pane_current_path}")'
+set -g @minimal-tmux-status-right '#{agent_limits} #{agent_indicator} #(gitmux "#{pane_current_path}")'
 ```
+
+## Agent limits
+
+`#{agent_limits}` shows the shortest active account-limit window for Claude and Codex:
+
+```text
+C 5h 4% used · X 7d 2% used
+```
+
+Percentages are used allowance, matching the provider dashboards. `C` means Claude and `X` means Codex. These limits are account-wide, so every pane using the same provider shares them.
+
+The collector reads local agent data:
+
+- Claude: `cachedUsageUtilization` from `~/.claude.json`, plus fresh `rate_limits` captured from Claude's status-line input
+- Codex: the newest `token_count.rate_limits` snapshot under `~/.codex/sessions/`
+
+The installer wraps an existing Claude status-line command and passes its input and output through unchanged. `--uninstall-claude` restores the previous command. Expired data is hidden.
+
+Configuration:
+
+```tmux
+set -g @agent-indicator-limits-enabled 'on'
+set -g @agent-indicator-limits-providers 'claude,codex'
+set -g @agent-indicator-limits-cache-seconds '60'
+```
+
+Omit a provider to hide it. Set the cache duration to `0` to read the source files on every status refresh.
 
 ## Session Dots
 
@@ -162,6 +193,11 @@ set -g @agent-indicator-animation-enabled 'on'
 set -g @agent-indicator-background-enabled 'on'
 set -g @agent-indicator-border-enabled 'on'
 set -g @agent-indicator-indicator-enabled 'on'
+
+# Account limits
+set -g @agent-indicator-limits-enabled 'on'
+set -g @agent-indicator-limits-providers 'claude,codex'
+set -g @agent-indicator-limits-cache-seconds '60'
 
 # Running state (default keeps pane/border unchanged)
 set -g @agent-indicator-running-enabled 'on'
@@ -334,13 +370,20 @@ To integrate any agent that does not have built-in hook support, call `agent-sta
 
 `--state off` always resets pane background and border immediately.
 
-## Claude Hook Template
+## Hook Templates
 
-Default template file: `hooks/claude-hooks.json`
-It maps:
+Default template files:
+- `hooks/claude-hooks.json`
+- `hooks/codex-hooks.json`
+
+The installer uses these templates as the source for Claude and Codex hook configuration, replacing the default plugin path with the selected install target.
+
+They map:
 - `UserPromptSubmit` -> `running`
 - `PermissionRequest` -> `needs-input`
 - `Stop` -> `done`
+
+Codex hooks must be reviewed and trusted with `/hooks` before they can run.
 
 ## OpenCode Plugin
 

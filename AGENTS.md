@@ -7,7 +7,7 @@ This repository is a tmux plugin written in Bash.
 - `scripts/agent-state.sh`: state machine for `running`, `needs-input`, `done`, `off`; applies/restores pane, border, and window-title styles.
 - `scripts/pane-focus-in.sh`: clears deferred `done` styling when pane/window focus changes.
 - `scripts/indicator.sh`: status segment renderer (icons + process/state detection).
-- `hooks/claude-hooks.json`: Claude hook template.
+- `hooks/`: Claude and Codex hook templates.
 - `docs/`: product notes and testing docs (`docs/PRD.md`, `docs/TESTING.md`, assets).
 
 Keep runtime logic in `scripts/`; keep `agent-indicator.tmux` focused on bootstrap/hook wiring.
