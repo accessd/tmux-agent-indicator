@@ -40,12 +40,15 @@ setup_test_server() {
     tmux_cmd run-shell "$REPO_ROOT/agent-indicator.tmux"
 
     PANE="$(tmux_cmd display-message -p -t ai:main.0 '#{pane_id}')"
+    # shellcheck disable=SC2034
     WIN="$(tmux_cmd display-message -p -t ai:main.0 '#{window_id}')"
 }
 
 create_other_window() {
     tmux_cmd new-window -d -t ai -n other
+    # shellcheck disable=SC2034
     OTHER_PANE="$(tmux_cmd display-message -p -t ai:other.0 '#{pane_id}')"
+    # shellcheck disable=SC2034
     OTHER_WIN="$(tmux_cmd display-message -p -t ai:other.0 '#{window_id}')"
 }
 

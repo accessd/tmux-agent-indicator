@@ -9,7 +9,7 @@ trap cleanup_test_server EXIT
 
 setup_test_server "focus-reset-done"
 
-run_state done
+run_state "done"
 tmux_cmd run-shell "$ROOT_DIR/scripts/pane-focus-in.sh \"$PANE\" \"$WIN\""
 
 status_style_after="$(get_window_option "$WIN" "window-status-style")"

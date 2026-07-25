@@ -64,7 +64,7 @@ Options:
   --no-claude          Skip Claude hooks setup
   --no-codex           Skip Codex hooks setup
   --no-opencode        Skip OpenCode plugin setup
-  --uninstall-claude   Remove tmux-agent-indicator Claude hooks from ~/.claude/settings.json
+  --uninstall-claude   Remove Claude hooks/status-line wrapper from ~/.claude/settings.json
   --uninstall-codex    Remove tmux-agent-indicator Codex hooks from ~/.codex/hooks.json
   --uninstall-opencode Remove tmux-agent-indicator OpenCode plugin from ~/.config/opencode/plugins/
   -h, --help           Show this help
@@ -148,11 +148,12 @@ cp "$SCRIPT_DIR/agent-indicator.tmux" "$TARGET_DIR/"
 cp "$SCRIPT_DIR/README.md" "$TARGET_DIR/"
 cp "$SCRIPT_DIR/LICENSE" "$TARGET_DIR/"
 cp "$SCRIPT_DIR/scripts/"*.sh "$TARGET_DIR/scripts/"
+cp "$SCRIPT_DIR/scripts/"*.py "$TARGET_DIR/scripts/"
 cp "$SCRIPT_DIR/hooks/"*.json "$TARGET_DIR/hooks/"
 cp "$SCRIPT_DIR/plugins/"*.js "$TARGET_DIR/plugins/"
 cp "$SCRIPT_DIR/setup.sh" "$TARGET_DIR/"
 
-chmod +x "$TARGET_DIR/agent-indicator.tmux" "$TARGET_DIR/scripts/"*.sh "$TARGET_DIR/setup.sh"
+chmod +x "$TARGET_DIR/agent-indicator.tmux" "$TARGET_DIR/scripts/"*.sh "$TARGET_DIR/scripts/"*.py "$TARGET_DIR/setup.sh"
 
 if [ "$INSTALL_CLAUDE" = true ] || [ "$UNINSTALL_CLAUDE" = true ]; then
     CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
@@ -165,7 +166,7 @@ if [ "$INSTALL_CLAUDE" = true ] || [ "$UNINSTALL_CLAUDE" = true ]; then
 
     if [ "$INSTALL_CLAUDE" = true ]; then
         echo "Claude detected"
-        echo "  Hooks -> $CLAUDE_SETTINGS (UserPromptSubmit, PermissionRequest, Stop)"
+        echo "  Hooks/status line -> $CLAUDE_SETTINGS"
     fi
 
     if [ -f "$CLAUDE_SETTINGS" ]; then
@@ -176,8 +177,10 @@ if [ "$INSTALL_CLAUDE" = true ] || [ "$UNINSTALL_CLAUDE" = true ]; then
         fi
 
         python3 - "$CLAUDE_SETTINGS" "$CLAUDE_TEMPLATE" "$TARGET_DIR" "$CLAUDE_MODE" <<'PY'
+import base64
 import json
 import pathlib
+import shlex
 import sys
 
 settings_path = pathlib.Path(sys.argv[1])
@@ -197,6 +200,29 @@ if not isinstance(settings, dict):
 hooks = settings.setdefault("hooks", {})
 if not isinstance(hooks, dict):
     hooks = {}
+
+def unwrap_statusline(command):
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        return False, ""
+    for index, part in enumerate(parts):
+        if not part.endswith("/scripts/agent-limits.py"):
+            continue
+        if parts[index + 1:index + 2] != ["claude-statusline"]:
+            continue
+        if index + 2 == len(parts):
+            return True, ""
+        if parts[index + 2:index + 3] != ["--previous-command-base64"]:
+            continue
+        if index + 3 >= len(parts):
+            return False, ""
+        try:
+            previous = base64.b64decode(parts[index + 3]).decode("utf-8")
+        except Exception:
+            return False, ""
+        return True, previous
+    return False, ""
 
 def is_plugin_command(command):
     return "scripts/agent-state.sh" in command and "--agent claude --state" in command
@@ -253,6 +279,30 @@ if mode == "install":
             hooks.setdefault(event, []).extend(entries)
 
 settings["hooks"] = hooks
+
+status_line = settings.get("statusLine")
+status_command = status_line.get("command", "") if isinstance(status_line, dict) else ""
+wrapped, previous_command = unwrap_statusline(status_command)
+
+if mode == "install" and (status_line is None or isinstance(status_line, dict)):
+    if not wrapped:
+        previous_command = status_command
+    encoded = base64.b64encode(previous_command.encode("utf-8")).decode("ascii")
+    script = shlex.quote(str(pathlib.Path(target_dir) / "scripts" / "agent-limits.py"))
+    command = f"{script} claude-statusline"
+    if encoded:
+        command += f" --previous-command-base64 {encoded}"
+    updated = dict(status_line) if isinstance(status_line, dict) else {}
+    updated["type"] = "command"
+    updated["command"] = command
+    settings["statusLine"] = updated
+elif mode == "uninstall" and wrapped:
+    if previous_command:
+        updated = dict(status_line)
+        updated["command"] = previous_command
+        settings["statusLine"] = updated
+    else:
+        settings.pop("statusLine", None)
 
 settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 PY
@@ -409,17 +459,17 @@ Or direct load:
   run-shell '$TARGET_DIR/agent-indicator.tmux'
 
 Status example:
-  set -g status-right '#{agent_indicator} | %H:%M'
+  set -g status-right '#{agent_limits} #{agent_indicator} | %H:%M'
 
 If using minimal-tmux-status:
-  set -g @minimal-tmux-status-right '#{agent_indicator} #(gitmux "#{pane_current_path}")'
+  set -g @minimal-tmux-status-right '#{agent_limits} #{agent_indicator} #(gitmux "#{pane_current_path}")'
 
 Reload tmux:
   tmux source-file ~/.tmux.conf
 EOF
 
 if [ "$UNINSTALL_CLAUDE" = true ]; then
-    echo "Removed tmux-agent-indicator Claude hooks from: ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+    echo "Removed tmux-agent-indicator Claude hooks/status-line wrapper from: ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 fi
 
 if [ "$UNINSTALL_CODEX" = true ]; then

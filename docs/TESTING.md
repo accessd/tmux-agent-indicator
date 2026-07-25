@@ -21,12 +21,21 @@ Run all checks:
 Run individual checks:
 
 ```bash
+./tests/test-agent-limits.sh
 ./tests/test-state-transitions.sh
 ./tests/test-indicator-output.sh
 ./tests/test-focus-reset-done.sh
 ./tests/test-window-title-reset.sh
 ./tests/test-running-animation.sh
 ```
+
+Check live provider limits without the tmux cache:
+
+```bash
+python3 scripts/agent-limits.py --no-cache
+```
+
+The output contains only unexpired provider windows. Example: `C 5h 4% used · X 7d 2% used`.
 
 Manual tmux-socket commands (below) are still useful for debugging.
 
