@@ -35,7 +35,7 @@ for _ in $(seq 1 20); do
 done
 [ "$changed" -eq 1 ] || fail "animation frame did not change"
 
-run_state done
+run_state "done"
 sleep 0.2
 
 anim_pid_after="$(get_env "TMUX_AGENT_ANIMATION_PID")"

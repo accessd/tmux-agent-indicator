@@ -11,7 +11,7 @@ setup_test_server "state-transitions"
 
 run_state running
 run_state needs-input
-run_state done
+run_state "done"
 run_state off
 
 state_after="$(get_env "TMUX_AGENT_PANE_${PANE}_STATE")"

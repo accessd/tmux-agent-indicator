@@ -6,6 +6,7 @@ CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 do_interpolation() {
     local string="$1"
     string="${string//\#\{agent_indicator\}/#($CURRENT_DIR/scripts/indicator.sh)}"
+    string="${string//\#\{agent_limits\}/#($CURRENT_DIR/scripts/agent-limits.sh)}"
     string="${string//\#\{agent_session_dots\}/#($CURRENT_DIR/scripts/session-dots.sh '#S')}"
     echo "$string"
 }
