@@ -128,6 +128,8 @@ Omit a provider to hide it. Set the cache duration to `0` to read the source fil
 
 Optional visual session indicator in the status bar. Shows all sessions as symbols with the current one highlighted. Sessions where agents need attention (`needs-input` or `done` state) are highlighted in a different color.
 
+Includes code from [tmux-session-dots](https://github.com/jtmcginty/tmux-session-dots) by [Jack McGinty](https://github.com/jtmcginty), used under the [MIT License](licenses/tmux-session-dots.txt).
+
 Example with 4 sessions, second is current, fourth needs attention: `○●○●`
 
 With emoji symbols:
