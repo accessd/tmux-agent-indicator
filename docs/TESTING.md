@@ -24,10 +24,13 @@ Run individual checks:
 ./tests/test-agent-limits.sh
 ./tests/test-state-transitions.sh
 ./tests/test-indicator-output.sh
+./tests/test-notification-panel.sh
 ./tests/test-focus-reset-done.sh
 ./tests/test-window-title-reset.sh
 ./tests/test-running-animation.sh
 ```
+
+`test-notification-panel.sh` covers the server-wide agent snapshot, status and working-directory groups, multi-line cards, terminal-title summaries, pane pins, all panel states, stale and mismatched hooks, default `pi` detection, ordering, popup close binding, and pane navigation.
 
 Check live provider limits without the tmux cache:
 

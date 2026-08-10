@@ -47,6 +47,12 @@ register_focus_hooks() {
     register_hook_once "after-select-pane" "$hook_command"
 }
 
+register_notification_panel() {
+    local panel_script="$CURRENT_DIR/scripts/notification-panel.sh"
+    tmux bind-key -n M-i display-popup -E -x '#{client_width}' -y 0 -w 42 -h 100% \
+        -T " Agent sessions " "$panel_script"
+}
+
 main() {
     tmux set-environment -g TMUX_AGENT_INDICATOR_DIR "$CURRENT_DIR"
     update_tmux_option "status-right"
@@ -55,6 +61,7 @@ main() {
     update_tmux_option "@minimal-tmux-status-left"
     update_tmux_option "@minimal-tmux-status-right-extra"
     update_tmux_option "@minimal-tmux-status-left-extra"
+    register_notification_panel
     register_focus_hooks
     local session_script="$CURRENT_DIR/scripts/session-changed.sh"
     register_hook_once "client-session-changed" "run-shell \"$session_script\""

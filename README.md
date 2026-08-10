@@ -35,10 +35,11 @@ States reset when you focus the pane/window, or on the next transition.
 - Deferred pane reset: keep pane colors until focus, not when the hook fires
 - Process detection fallback for agents that don't fire hooks
 - Tmux display-message notifications on state transitions
+- Agent sessions panel for jumping to live agent CLI panes
 
 ## Requirements
 
-tmux 3.1+, bash 4+, Python 3
+tmux 3.2+, bash 4+, Python 3, fzf 0.71+
 
 ## Installation
 
@@ -226,7 +227,7 @@ set -g @agent-indicator-done-window-title-fg 'black'
 set -g @agent-indicator-icons 'claude=🤖,codex=🧠,opencode=💻,default=🤖'
 
 # Process fallback detection
-set -g @agent-indicator-processes 'claude,codex,aider,cursor,opencode'
+set -g @agent-indicator-processes 'claude,codex,aider,cursor,opencode,pi'
 
 # Keep pane colors until pane focus-in after done
 set -g @agent-indicator-reset-on-focus 'on'
@@ -328,6 +329,17 @@ Tmux supports:
 ![Tmux color chart](docs/assets/tmux-colors.png)
 
 </details>
+
+## Agent Sessions
+
+Press `Alt+i` to open a right-side panel listing every live agent CLI session across the tmux server. Sessions appear as two-line cards grouped by `needs-input`, `done`, `running`, and `idle`, then by the pane's working directory. The card title uses the agent's terminal title when it contains a useful conversation name, then falls back to the repository or window name.
+
+- Press `Enter` to jump to the selected pane.
+- Press `Ctrl+P` to pin or unpin a pane within its status and working-directory group. Pins last for the lifetime of the tmux server.
+- Type to search titles, agents, tmux locations, repositories, and paths.
+- Press `Alt+i` again or `Escape` to close the panel.
+
+Agent marks use `C` for Claude Code, `X` for Codex, `O` for OpenCode, `π` for Pi, `A` for Aider, and `Cu` for Cursor.
 
 ## Notifications
 
