@@ -118,7 +118,6 @@ if [ "$window_done" = "1" ] || [ "$state" = "done" ] || [ "$done_marker" = "1" ]
         pane_prefix="${line%%_DONE_WINDOW=*}"
         tmux_unset_env "${pane_prefix}_DONE"
         tmux_unset_env "${pane_prefix}_DONE_WINDOW"
-        tmux_unset_env "${pane_prefix}_PENDING_RESET"
         tmux_unset_env "${pane_prefix}_STATE"
         tmux_unset_env "${pane_prefix}_AGENT"
     done < <(tmux show-environment -g | rg "^TMUX_AGENT_PANE_.*_DONE_WINDOW=${done_window}$" || true)
