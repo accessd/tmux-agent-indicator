@@ -56,9 +56,21 @@ for expected in display-popup -E 'Agent sessions' '-h "100%"' '-w 42' '-x "#{cli
         *) fail "Alt+i binding should contain $expected: $binding" ;;
     esac
 done
+case "$binding" in
+    *'notification-panel.sh --all'*) fail "Alt+i should default to the current tmux session" ;;
+esac
+
+all_binding="$(tmux_cmd list-keys -T root | rg 'M-I.*display-popup')"
+for expected in display-popup -E 'All agent sessions' '-h "100%"' '-w 42' '-x "#{client_width}"' '-y 0' 'notification-panel.sh --all'; do
+    case "$all_binding" in
+        *"$expected"*) ;;
+        *) fail "Alt+Shift+i binding should contain $expected: $all_binding" ;;
+    esac
+done
 
 real_tmux="$(command -v tmux)"
 capture="$test_dir/fzf-input"
+current_capture="$test_dir/fzf-current-input"
 bash3_capture="$test_dir/bash3-input"
 fzf_args="$test_dir/fzf-args"
 command_log="$test_dir/tmux-commands"
@@ -128,14 +140,21 @@ exec "$REAL_TMUX" "$@"
 EOF
 chmod +x "$test_dir/fzf" "$test_dir/ps" "$test_dir/tmux"
 
-tmux_cmd run-shell "PATH=\"$test_dir:\$PATH\" REAL_TMUX=\"$real_tmux\" FZF_ARGS=\"$fzf_args\" FZF_CAPTURE=\"$capture\" TMUX_COMMAND_LOG=\"$command_log\" PS_MAP=\"$ps_map\" \"$ROOT_DIR/scripts/notification-panel.sh\""
+tmux_cmd run-shell -t "$PANE" "PATH=\"$test_dir:\$PATH\" TMUX_PANE=\"$PANE\" REAL_TMUX=\"$real_tmux\" FZF_ARGS=\"$fzf_args\" FZF_CAPTURE=\"$current_capture\" TMUX_COMMAND_LOG=\"$command_log\" PS_MAP=\"$ps_map\" \"$ROOT_DIR/scripts/notification-panel.sh\""
 
-tmux_cmd run-shell "PATH=\"$test_dir:/usr/bin:/bin\" REAL_TMUX=\"$real_tmux\" TMUX_COMMAND_LOG=\"$command_log\" PS_MAP=\"$ps_map\" /bin/bash \"$ROOT_DIR/scripts/notification-panel.sh\" --list > \"$bash3_capture\""
+tmux_cmd run-shell -t "$PANE" "PATH=\"$test_dir:\$PATH\" TMUX_PANE=\"$PANE\" REAL_TMUX=\"$real_tmux\" FZF_ARGS=\"$fzf_args\" FZF_CAPTURE=\"$capture\" TMUX_COMMAND_LOG=\"$command_log\" PS_MAP=\"$ps_map\" \"$ROOT_DIR/scripts/notification-panel.sh\" --all"
+
+tmux_cmd run-shell -t "$PANE" "PATH=\"$test_dir:/usr/bin:/bin\" TMUX_PANE=\"$PANE\" REAL_TMUX=\"$real_tmux\" TMUX_COMMAND_LOG=\"$command_log\" PS_MAP=\"$ps_map\" /bin/bash \"$ROOT_DIR/scripts/notification-panel.sh\" --list > \"$bash3_capture\""
 bash3_record_count="$(LC_ALL=C tr -cd '\000' < "$bash3_capture" | wc -c | tr -d ' ')"
-[ "$bash3_record_count" = "6" ] || fail "panel should render under the macOS system Bash used by tmux popups"
+[ "$bash3_record_count" = "5" ] || fail "current-session panel should render under the macOS system Bash used by tmux popups"
 
+current_record_count="$(LC_ALL=C tr -cd '\000' < "$current_capture" | wc -c | tr -d ' ')"
+[ "$current_record_count" = "5" ] || fail "Alt+i should list only live agents from the current tmux session"
+if rg -a -q "^${PI_PANE}"$'\t' "$current_capture"; then
+    fail "current-session panel should exclude agents from other tmux sessions"
+fi
 record_count="$(LC_ALL=C tr -cd '\000' < "$capture" | wc -c | tr -d ' ')"
-[ "$record_count" = "6" ] || fail "panel should list every live agent pane and exclude stale hooks"
+[ "$record_count" = "6" ] || fail "Alt+Shift+i should list every live agent pane and exclude stale hooks"
 rg -q -- '--bind=alt-i:abort,start:unbind\(alt-i\),load:rebind\(alt-i\)' "$fzf_args" || fail "Alt+i should close the open panel after startup"
 rg -q -- '--prompt=agent sessions> ' "$fzf_args" || fail "panel prompt should describe agent sessions"
 rg -q -- '--header=Enter open · Ctrl-P pin · Alt-I close' "$fzf_args" || fail "panel header should describe card actions"
@@ -143,6 +162,7 @@ for expected_arg in --read0 --ansi --no-sort --track --id-nth=1 --with-nth=16.. 
     rg -q -- "$expected_arg" "$fzf_args" || fail "panel should pass $expected_arg to fzf"
 done
 rg -q -- 'ctrl-p:execute-silent.*--toggle-pin.*\{1\}.*reload.*--list' "$fzf_args" || fail "Ctrl-P should toggle the selected pin and reload cards"
+rg -q -- 'reload.*--all --list' "$fzf_args" || fail "all-sessions panel should preserve its scope after reloading cards"
 
 actual_order=""
 captured_panes=""
@@ -177,7 +197,7 @@ rg -a -q 'X  Fix deployment headers' "$capture" || fail "Codex spinner should be
 rg -a -q 'Cu  project-b' "$capture" || fail "hostname title should fall back to the working-directory name"
 rg -a -q '📌 π ' "$capture" || fail "pinned Pi card should render its pin and agent mark"
 
-[ "$(rg -c '^list-panes -a ' "$command_log")" = "2" ] || fail "each panel render should enumerate panes with one server-wide snapshot"
+[ "$(rg -c '^list-panes -a ' "$command_log")" = "3" ] || fail "each panel render should enumerate panes with one server-wide snapshot"
 snapshot_command="$(rg '^list-panes -a ' "$command_log" | head -n1)"
 for field in pane_id pane_tty session_id session_name window_id window_name pane_index pane_current_path pane_title; do
     case "$snapshot_command" in

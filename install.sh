@@ -167,7 +167,7 @@ if [ "$INSTALL_CLAUDE" = true ] || [ "$UNINSTALL_CLAUDE" = true ]; then
 
     if [ "$INSTALL_CLAUDE" = true ]; then
         echo "Claude detected"
-        echo "  Hooks/status line -> $CLAUDE_SETTINGS"
+        echo "  Hooks/status line -> $CLAUDE_SETTINGS (UserPromptSubmit, PermissionRequest, PostToolUse, PostToolUseFailure, Stop)"
     fi
 
     if [ -f "$CLAUDE_SETTINGS" ]; then

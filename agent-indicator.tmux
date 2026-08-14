@@ -51,6 +51,8 @@ register_notification_panel() {
     local panel_script="$CURRENT_DIR/scripts/notification-panel.sh"
     tmux bind-key -n M-i display-popup -E -x '#{client_width}' -y 0 -w 42 -h 100% \
         -T " Agent sessions " "$panel_script"
+    tmux bind-key -n M-I display-popup -E -x '#{client_width}' -y 0 -w 42 -h 100% \
+        -T " All agent sessions " "$panel_script --all"
 }
 
 main() {

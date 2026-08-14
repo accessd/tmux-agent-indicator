@@ -52,6 +52,12 @@ toggle_pin() {
     fi
 }
 
+all_sessions=false
+if [ "${1:-}" = "--all" ]; then
+    all_sessions=true
+    shift
+fi
+
 if [ "${1:-}" = "--toggle-pin" ]; then
     [ "$#" -eq 2 ] || exit 1
     toggle_pin "$2"
@@ -107,6 +113,7 @@ pane_hook_agent() {
 processes=$(tmux_get_option_or_default "@agent-indicator-processes" "$AGENT_INDICATOR_DEFAULT_PROCESSES")
 pinned_panes=$(tmux show-option -gqv "$PIN_OPTION" 2>/dev/null || true)
 host_name=$(hostname -s 2>/dev/null || hostname 2>/dev/null || true)
+current_session_id=$(tmux display-message -p -t "${TMUX_PANE:-}" '#{session_id}')
 pane_snapshot=$(tmux list-panes -a -F $'#{pane_id}\t#{pane_tty}\t#{session_id}\t#{session_name}\t#{window_id}\t#{window_name}\t#{pane_index}\t#{pane_current_path}\t#{pane_title}')
 
 truncate_text() {
@@ -209,6 +216,9 @@ render_rows() {
     local agent hook_agent state rank pin_rank location repo summary mark
 
     while IFS=$'\t' read -r pane_id pane_tty session_id session window_id window pane_index path pane_title; do
+        if [ "$all_sessions" = false ] && [ "$session_id" != "$current_session_id" ]; then
+            continue
+        fi
         if ! agent=$(agent_indicator_detect_process "$pane_tty" "$processes"); then
             continue
         fi
@@ -318,6 +328,10 @@ if ! fzf --help 2>&1 | grep -q -- '--id-nth'; then
 fi
 
 printf -v panel_command '%q' "$SCRIPT_DIR/notification-panel.sh"
+panel_list_command="$panel_command --list"
+if [ "$all_sessions" = true ]; then
+    panel_list_command="$panel_command --all --list"
+fi
 
 # ponytail: delay EOF so a forwarded opener cannot trigger the close binding.
 if ! selection=$({ render_cards; sleep 0.2; } | fzf \
@@ -334,7 +348,7 @@ if ! selection=$({ render_cards; sleep 0.2; } | fzf \
     --border=none \
     --info=inline \
     --bind='alt-i:abort,start:unbind(alt-i),load:rebind(alt-i)' \
-    --bind="ctrl-p:execute-silent($panel_command --toggle-pin {1})+reload($panel_command --list)" \
+    --bind="ctrl-p:execute-silent($panel_command --toggle-pin {1})+reload($panel_list_command)" \
     --prompt='agent sessions> ' \
     --header='Enter open · Ctrl-P pin · Alt-I close'); then
     exit 0

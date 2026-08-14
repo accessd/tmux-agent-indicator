@@ -332,7 +332,7 @@ Tmux supports:
 
 ## Agent Sessions
 
-Press `Alt+i` to open a right-side panel listing every live agent CLI session across the tmux server. Sessions appear as two-line cards grouped by `needs-input`, `done`, `running`, and `idle`, then by the pane's working directory. The card title uses the agent's terminal title when it contains a useful conversation name, then falls back to the repository or window name.
+Press `Alt+i` to open a right-side panel listing live agent CLI sessions in the current tmux session. Press `Alt+Shift+i` to list agents across the whole tmux server. Sessions appear as two-line cards grouped by `needs-input`, `done`, `running`, and `idle`, then by the pane's working directory. The card title uses the agent's terminal title when it contains a useful conversation name, then falls back to the repository or window name.
 
 - Press `Enter` to jump to the selected pane.
 - Press `Ctrl+P` to pin or unpin a pane within its status and working-directory group. Pins last for the lifetime of the tmux server.
@@ -395,6 +395,7 @@ The installer uses these templates as the source for Claude and Codex hook confi
 They map:
 - `UserPromptSubmit` -> `running`
 - `PermissionRequest` -> `needs-input`
+- `PostToolUse` / `PostToolUseFailure` -> `running`
 - `Stop` -> `done`
 
 Codex hooks must be reviewed and trusted with `/hooks` before they can run.
