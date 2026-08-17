@@ -25,6 +25,8 @@ export const TmuxAgentIndicator = async ({ $ }) => {
 
   return {
     event: async ({ event }) => {
+      if (event.properties?.parentID) return;
+
       if (event.type === "session.status"
           && event.properties.status.type === "busy") {
         // Guard: don't override done/error if idle fired recently (race condition)
@@ -32,8 +34,7 @@ export const TmuxAgentIndicator = async ({ $ }) => {
         await setState("running");
       }
 
-      if (event.type === "permission.updated"
-          || event.type === "permission.asked") {
+      if (event.type === "permission.updated") {
         await setState("needs-input");
       }
 
