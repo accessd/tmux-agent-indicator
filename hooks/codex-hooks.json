@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${TMUX_AGENT_INDICATOR_DIR:-$HOME/.tmux/plugins/tmux-agent-indicator}\"/scripts/agent-state.sh --agent codex --state running",
+            "command": "\"${TMUX_AGENT_INDICATOR_DIR:-$HOME/.tmux/plugins/tmux-agent-indicator}\"/scripts/agent-state.sh --agent codex --state running --description-from-stdin",
             "statusMessage": "tmux: codex running"
           }
         ]

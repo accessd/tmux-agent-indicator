@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 tests=(
+    "$ROOT_DIR/tests/test-agent-store.sh"
     "$ROOT_DIR/tests/test-agent-limits.sh"
     "$ROOT_DIR/tests/test-claude-hook-recovery.sh"
     "$ROOT_DIR/tests/test-state-transitions.sh"

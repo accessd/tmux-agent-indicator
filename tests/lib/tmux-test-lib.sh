@@ -38,6 +38,7 @@ setup_test_server() {
     tmux_cmd -f /dev/null new-session -d -s ai -n main
     tmux_cmd set -g status-right '#{agent_indicator} | %H:%M'
     tmux_cmd run-shell "$REPO_ROOT/agent-indicator.tmux"
+    tmux_cmd set-environment -g TMUX_AGENT_STORE_BIN /nonexistent
 
     PANE="$(tmux_cmd display-message -p -t ai:main.0 '#{pane_id}')"
     # shellcheck disable=SC2034

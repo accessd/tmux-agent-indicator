@@ -48,7 +48,7 @@ PY
 }
 
 install_claude_hooks() {
-    CLAUDE_CONFIG_DIR="$CLAUDE_DIR" "$ROOT_DIR/install.sh" \
+    TMUX_AGENT_STORE_DIR="$TEST_DIR/store" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" "$ROOT_DIR/install.sh" \
         --target-dir "$TARGET_DIR" --no-codex --no-opencode >/dev/null
 }
 
@@ -67,7 +67,7 @@ done
     exit 1
 }
 
-CLAUDE_CONFIG_DIR="$CLAUDE_DIR" "$ROOT_DIR/install.sh" \
+TMUX_AGENT_STORE_DIR="$TEST_DIR/store" CLAUDE_CONFIG_DIR="$CLAUDE_DIR" "$ROOT_DIR/install.sh" \
     --target-dir "$TARGET_DIR" --uninstall-claude --no-codex --no-opencode >/dev/null
 
 for event in PostToolUse PostToolUseFailure; do

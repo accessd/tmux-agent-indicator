@@ -3,9 +3,11 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 usage() {
     cat <<'EOF' >&2
-Usage: agent-state.sh --agent <name> --state <running|needs-input|done|off>
+Usage: agent-state.sh --agent <name> --state <running|needs-input|done|off> [--description-from-stdin]
 EOF
 }
 
@@ -331,6 +333,7 @@ notify_state_change() {
 
 agent=""
 state=""
+description_from_stdin=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --agent)
@@ -342,6 +345,10 @@ while [ "$#" -gt 0 ]; do
             [ "$#" -lt 2 ] && usage && exit 1
             state="$2"
             shift 2
+            ;;
+        --description-from-stdin)
+            description_from_stdin=true
+            shift
             ;;
         *)
             usage
@@ -364,6 +371,10 @@ case "$state" in
 esac
 
 pane_id=$(resolve_target_pane "$agent")
+description=""
+if [ "$description_from_stdin" = true ]; then
+    description=$(python3 -c 'import json, sys; value = json.load(sys.stdin).get("prompt", ""); print(" ".join(value.split())[:120] if isinstance(value, str) else "")' 2>/dev/null || true)
+fi
 window_id=$(tmux display-message -p -t "$pane_id" '#{window_id}')
 active_window_id=$(tmux display-message -p '#{window_id}')
 active_pane_id=$(tmux display-message -p '#{pane_id}')
@@ -383,6 +394,11 @@ agent_key="TMUX_AGENT_PANE_${pane_id}_AGENT"
 done_key="TMUX_AGENT_PANE_${pane_id}_DONE"
 done_window_key="TMUX_AGENT_PANE_${pane_id}_DONE_WINDOW"
 pending_reset_key="TMUX_AGENT_PANE_${pane_id}_PENDING_RESET"
+description_key="TMUX_AGENT_PANE_${pane_id}_DESCRIPTION"
+
+if [ -n "$description" ]; then
+    tmux_set_env "$description_key" "$description"
+fi
 
 if [ "$state" != "off" ]; then
     state_enabled=$(tmux_get_option_or_default "@agent-indicator-${state}-enabled" "on")
@@ -539,10 +555,21 @@ case "$state" in
         tmux_unset_env "$pending_reset_key"
         tmux_unset_env "$state_key"
         tmux_unset_env "$agent_key"
+        tmux_unset_env "$description_key"
         tmux_unset_env "TMUX_AGENT_ACTIVE_PANE_${agent}"
         reset_pane_style "$pane_id"
         restore_active_border_style "$window_id"
         ;;
 esac
+
+store_bin="${TMUX_AGENT_STORE_BIN:-$SCRIPT_DIR/../bin/agent-store}"
+if [ -x "$store_bin" ]; then
+    "$store_bin" event --pane "$pane_id" --agent "$agent" --state "$state" --description "$description" >/dev/null 2>&1 || true
+fi
+
+while IFS=$'\t' read -r panel_pane panel_marker; do
+    [ "$panel_marker" = "1" ] || continue
+    tmux wait-for -S "agent-indicator-panel-${panel_pane#%}"
+done < <(tmux list-panes -a -F $'#{pane_id}\t#{@agent-indicator-panel}')
 
 tmux refresh-client -S >/dev/null 2>&1 || true

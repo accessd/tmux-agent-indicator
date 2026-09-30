@@ -39,7 +39,7 @@ States reset when you focus the pane/window, or on the next transition.
 
 ## Requirements
 
-tmux 3.2+, bash 4+, Python 3, fzf 0.71+
+tmux 3.2+, bash 4+, Python 3, Go 1.25+, fzf 0.71+
 
 ## Installation
 
@@ -56,6 +56,7 @@ bash ~/.tmux/plugins/tmux-agent-indicator/setup.sh
 ```
 
 This installs files to `~/.tmux/plugins/tmux-agent-indicator` and updates:
+- `~/.tmux/plugins/tmux-agent-indicator/bin/agent-store`, built from the Go source
 - `~/.claude/settings.json` hooks for Claude (`UserPromptSubmit`, `PermissionRequest`, `Stop`)
 - `~/.codex/hooks.json` hooks for Codex (`UserPromptSubmit`, `PermissionRequest`, `Stop`)
 - `~/.config/opencode/plugins/` plugin for OpenCode
@@ -332,14 +333,38 @@ Tmux supports:
 
 ## Agent Sessions
 
-Press `Alt+i` to open a right-side panel listing live agent CLI sessions in the current tmux session. Press `Alt+Shift+i` to list agents across the whole tmux server. Sessions appear as two-line cards grouped by `needs-input`, `done`, `running`, and `idle`, then by the pane's working directory. The card title uses the agent's terminal title when it contains a useful conversation name, then falls back to the repository or window name.
+Press `Alt+i` to open a 42-column tmux pane on the left of every window in the current tmux session. Press `Alt+Shift+i` to open it in every window across the whole tmux server. Each pane spans the full window height without replacing the existing layout. Agent hooks refresh panels only when state changes. Agents appear as two-line cards grouped by tmux window. The first line shows state and working directory. The second shows the agent and session description. Codex descriptions come from `UserPromptSubmit`; other agents use their terminal title, then fall back to the directory or window name.
+
+A small Go daemon stores registered sessions in SQLite under `${XDG_STATE_HOME:-~/.local/state}/tmux-agent-indicator`. Opening a set of panels performs one tmux/process sync; every panel then reads the shared snapshot. Claude Code, Codex, and OpenCode sessions are registered by hooks. Process discovery is the fallback for Aider, Cursor, and Pi:
+
+```tmux
+set -g @agent-indicator-panel-discovery-agents 'aider,cursor,pi'
+```
 
 - Press `Enter` to jump to the selected pane.
-- Press `Ctrl+P` to pin or unpin a pane within its status and working-directory group. Pins last for the lifetime of the tmux server.
-- Type to search titles, agents, tmux locations, repositories, and paths.
+- Press `j`/`k` or the arrow keys to move through agents.
+- Press `r` to rescan every tmux pane. Use it for agents without hooks or after starting and stopping an agent manually.
+- Press `/` to search the visible window name, directory, agent mark, and description. `Escape` clears the search and returns to navigation.
+- Press `Ctrl+P` to pin or unpin a pane within its window group. Pins last for the lifetime of the tmux server.
 - Press `Alt+i` again or `Escape` to close the panel.
 
 Agent marks use `C` for Claude Code, `X` for Codex, `O` for OpenCode, `π` for Pi, `A` for Aider, and `Cu` for Cursor.
+
+Status icons use `●` for running, `◆` for needs input, `✓` for done, and `○` when a registered agent process is live but no current hook state is available.
+
+```tmux
+set -g @agent-indicator-panel-needs-input-color 'yellow'
+set -g @agent-indicator-panel-done-color 'green'
+set -g @agent-indicator-panel-running-color 'blue'
+set -g @agent-indicator-panel-needs-input-bg 'yellow'
+set -g @agent-indicator-panel-done-bg 'green'
+set -g @agent-indicator-panel-running-bg 'blue'
+set -g @agent-indicator-panel-needs-input-fg 'black'
+set -g @agent-indicator-panel-done-fg 'black'
+set -g @agent-indicator-panel-running-fg 'white'
+```
+
+Panel colors accept the basic, bright, and `colour0` ... `colour255` formats listed above. Set an option to `''` to leave that icon, foreground, or background uncolored.
 
 ## Notifications
 
@@ -399,6 +424,7 @@ They map:
 - `Stop` -> `done`
 
 Codex hooks must be reviewed and trusted with `/hooks` before they can run.
+The Codex `UserPromptSubmit` hook also stores its prompt as the pane's panel description.
 
 ## OpenCode Plugin
 
