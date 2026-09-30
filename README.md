@@ -35,10 +35,11 @@ States reset when you focus the pane/window, or on the next transition.
 - Deferred pane reset: keep pane colors until focus, not when the hook fires
 - Process detection fallback for agents that don't fire hooks
 - Tmux display-message notifications on state transitions
+- Agent sessions panel for jumping to live agent CLI panes
 
 ## Requirements
 
-tmux 3.1+, bash 4+, Python 3
+tmux 3.2+, bash 4+, Python 3, Go 1.25+, fzf 0.71+
 
 ## Installation
 
@@ -55,6 +56,7 @@ bash ~/.tmux/plugins/tmux-agent-indicator/setup.sh
 ```
 
 This installs files to `~/.tmux/plugins/tmux-agent-indicator` and updates:
+- `~/.tmux/plugins/tmux-agent-indicator/bin/agent-store`, built from the Go source
 - `~/.claude/settings.json` hooks for Claude (`UserPromptSubmit`, `PermissionRequest`, `Stop`)
 - `~/.codex/hooks.json` hooks for Codex (`UserPromptSubmit`, `PermissionRequest`, `Stop`)
 - `~/.config/opencode/plugins/` plugin for OpenCode
@@ -226,7 +228,7 @@ set -g @agent-indicator-done-window-title-fg 'black'
 set -g @agent-indicator-icons 'claude=🤖,codex=🧠,opencode=💻,default=🤖'
 
 # Process fallback detection
-set -g @agent-indicator-processes 'claude,codex,aider,cursor,opencode'
+set -g @agent-indicator-processes 'claude,codex,aider,cursor,opencode,pi'
 
 # Keep pane colors until pane focus-in after done
 set -g @agent-indicator-reset-on-focus 'on'
@@ -329,6 +331,41 @@ Tmux supports:
 
 </details>
 
+## Agent Sessions
+
+Press `Alt+i` to open a 42-column tmux pane on the left of every window in the current tmux session. Press `Alt+Shift+i` to open it in every window across the whole tmux server. Each pane spans the full window height without replacing the existing layout. Agent hooks refresh panels only when state changes. Agents appear as two-line cards grouped by tmux window. The first line shows state and working directory. The second shows the agent and session description. Codex descriptions come from `UserPromptSubmit`; other agents use their terminal title, then fall back to the directory or window name.
+
+A small Go daemon stores registered sessions in SQLite under `${XDG_STATE_HOME:-~/.local/state}/tmux-agent-indicator`. Opening a set of panels performs one tmux/process sync; every panel then reads the shared snapshot. Claude Code, Codex, and OpenCode sessions are registered by hooks. Process discovery is the fallback for Aider, Cursor, and Pi:
+
+```tmux
+set -g @agent-indicator-panel-discovery-agents 'aider,cursor,pi'
+```
+
+- Press `Enter` to jump to the selected pane.
+- Press `j`/`k` or the arrow keys to move through agents.
+- Press `r` to rescan every tmux pane. Use it for agents without hooks or after starting and stopping an agent manually.
+- Press `/` to search the visible window name, directory, agent mark, and description. `Escape` clears the search and returns to navigation.
+- Press `Ctrl+P` to pin or unpin a pane within its window group. Pins last for the lifetime of the tmux server.
+- Press `Alt+i` again or `Escape` to close the panel.
+
+Agent marks use `C` for Claude Code, `X` for Codex, `O` for OpenCode, `π` for Pi, `A` for Aider, and `Cu` for Cursor.
+
+Status icons use `●` for running, `◆` for needs input, `✓` for done, and `○` when a registered agent process is live but no current hook state is available.
+
+```tmux
+set -g @agent-indicator-panel-needs-input-color 'yellow'
+set -g @agent-indicator-panel-done-color 'green'
+set -g @agent-indicator-panel-running-color 'blue'
+set -g @agent-indicator-panel-needs-input-bg 'yellow'
+set -g @agent-indicator-panel-done-bg 'green'
+set -g @agent-indicator-panel-running-bg 'blue'
+set -g @agent-indicator-panel-needs-input-fg 'black'
+set -g @agent-indicator-panel-done-fg 'black'
+set -g @agent-indicator-panel-running-fg 'white'
+```
+
+Panel colors accept the basic, bright, and `colour0` ... `colour255` formats listed above. Set an option to `''` to leave that icon, foreground, or background uncolored.
+
 ## Notifications
 
 State transitions trigger a `tmux display-message` notification. Enabled by default for `needs-input` and `done` states.
@@ -383,9 +420,11 @@ The installer uses these templates as the source for Claude and Codex hook confi
 They map:
 - `UserPromptSubmit` -> `running`
 - `PermissionRequest` -> `needs-input`
+- `PostToolUse` / `PostToolUseFailure` -> `running`
 - `Stop` -> `done`
 
 Codex hooks must be reviewed and trusted with `/hooks` before they can run.
+The Codex `UserPromptSubmit` hook also stores its prompt as the pane's panel description.
 
 ## OpenCode Plugin
 

@@ -3,6 +3,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=SCRIPTDIR/process-detection.sh
+source "$SCRIPT_DIR/process-detection.sh"
+
 # Check tmux availability and active server context
 if ! command -v tmux >/dev/null 2>&1; then
     exit 0
@@ -101,7 +105,7 @@ fi
 if ! tmux_option_is_set "@agent-indicator-icons" && [ -z "$ICONS" ]; then
     ICONS="claude=🤖,codex=🧠,opencode=💻,default=🤖"
 fi
-PROCESSES=$(tmux_get_option_or_default "@agent-indicator-processes" "claude,codex,aider,cursor,opencode")
+PROCESSES=$(tmux_get_option_or_default "@agent-indicator-processes" "$AGENT_INDICATOR_DEFAULT_PROCESSES")
 INDICATOR_ENABLED=$(tmux_get_option_or_default "@agent-indicator-indicator-enabled" "on")
 ANIMATION_ENABLED=$(tmux_get_option_or_default "@agent-indicator-animation-enabled" "off")
 
@@ -156,31 +160,20 @@ done < <(tmux list-panes -t "$WINDOW_ID" -F '#{pane_id} #{pane_tty} #{pane_activ
 
 # Method 3: Process detection fallback in current pane
 if [ -n "$PANE_TTY" ]; then
-    IFS=',' read -ra PROC_ARRAY <<< "$PROCESSES"
-    for proc in "${PROC_ARRAY[@]}"; do
-        proc=$(trim "$proc")
-        [ -z "$proc" ] && continue
-        # Check if process is running on this TTY
-        if ps -t "$(basename "$PANE_TTY")" -o command= 2>/dev/null | grep -qw "$proc"; then
-            icon_for_agent "$proc" "$ICONS"
-            exit 0
-        fi
-    done
+    if detected_agent=$(agent_indicator_detect_process "$PANE_TTY" "$PROCESSES"); then
+        icon_for_agent "$detected_agent" "$ICONS"
+        exit 0
+    fi
 fi
 
 # Method 4: Process detection in other panes of current window
 while IFS=' ' read -r other_pane other_tty other_active; do
     [ "$other_active" = "1" ] && continue
     [ -n "$other_tty" ] || continue
-    IFS=',' read -ra PROC_ARRAY <<< "$PROCESSES"
-    for proc in "${PROC_ARRAY[@]}"; do
-        proc=$(trim "$proc")
-        [ -z "$proc" ] && continue
-        if ps -t "$(basename "$other_tty")" -o command= 2>/dev/null | grep -qw "$proc"; then
-            icon_for_agent "$proc" "$ICONS"
-            exit 0
-        fi
-    done
+    if detected_agent=$(agent_indicator_detect_process "$other_tty" "$PROCESSES"); then
+        icon_for_agent "$detected_agent" "$ICONS"
+        exit 0
+    fi
 done < <(tmux list-panes -t "$WINDOW_ID" -F '#{pane_id} #{pane_tty} #{pane_active}')
 
 # No agent detected

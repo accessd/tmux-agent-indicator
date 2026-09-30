@@ -22,12 +22,16 @@ Run individual checks:
 
 ```bash
 ./tests/test-agent-limits.sh
+./tests/test-agent-store.sh
 ./tests/test-state-transitions.sh
 ./tests/test-indicator-output.sh
+./tests/test-notification-panel.sh
 ./tests/test-focus-reset-done.sh
 ./tests/test-window-title-reset.sh
 ./tests/test-running-animation.sh
 ```
+
+`test-notification-panel.sh` covers the left full-height tmux pane, toggle behavior and layout restoration, event-driven and manual reload bindings, stable ordering across state changes, one shared server snapshot, SQLite-backed panel reads, registered-session filtering, window groups, two-line cards, Codex hook descriptions, terminal-title fallbacks, pane pins, all panel states, default `pi` discovery, and pane navigation.
 
 Check live provider limits without the tmux cache:
 

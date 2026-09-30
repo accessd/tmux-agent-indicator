@@ -142,7 +142,16 @@ if [ "$INSTALL_OPENCODE" = true ] && [ "$UNINSTALL_OPENCODE" = false ]; then
     fi
 fi
 
-mkdir -p "$TARGET_DIR/scripts" "$TARGET_DIR/hooks" "$TARGET_DIR/plugins" "$TARGET_DIR/licenses"
+mkdir -p "$TARGET_DIR/bin" "$TARGET_DIR/scripts" "$TARGET_DIR/hooks" "$TARGET_DIR/plugins" "$TARGET_DIR/licenses"
+
+if ! command -v go >/dev/null 2>&1; then
+    echo "Go is required to build the agent session store" >&2
+    exit 1
+fi
+if [ -x "$TARGET_DIR/bin/agent-store" ]; then
+    "$TARGET_DIR/bin/agent-store" stop >/dev/null 2>&1 || true
+fi
+(cd "$SCRIPT_DIR" && env -u GOROOT go build -o "$TARGET_DIR/bin/agent-store" ./cmd/agent-store)
 
 cp "$SCRIPT_DIR/agent-indicator.tmux" "$TARGET_DIR/"
 cp "$SCRIPT_DIR/README.md" "$TARGET_DIR/"
@@ -154,7 +163,7 @@ cp "$SCRIPT_DIR/hooks/"*.json "$TARGET_DIR/hooks/"
 cp "$SCRIPT_DIR/plugins/"*.js "$TARGET_DIR/plugins/"
 cp "$SCRIPT_DIR/setup.sh" "$TARGET_DIR/"
 
-chmod +x "$TARGET_DIR/agent-indicator.tmux" "$TARGET_DIR/scripts/"*.sh "$TARGET_DIR/scripts/"*.py "$TARGET_DIR/setup.sh"
+chmod +x "$TARGET_DIR/agent-indicator.tmux" "$TARGET_DIR/bin/agent-store" "$TARGET_DIR/scripts/"*.sh "$TARGET_DIR/scripts/"*.py "$TARGET_DIR/setup.sh"
 
 if [ "$INSTALL_CLAUDE" = true ] || [ "$UNINSTALL_CLAUDE" = true ]; then
     CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
@@ -167,7 +176,7 @@ if [ "$INSTALL_CLAUDE" = true ] || [ "$UNINSTALL_CLAUDE" = true ]; then
 
     if [ "$INSTALL_CLAUDE" = true ]; then
         echo "Claude detected"
-        echo "  Hooks/status line -> $CLAUDE_SETTINGS"
+        echo "  Hooks/status line -> $CLAUDE_SETTINGS (UserPromptSubmit, PermissionRequest, PostToolUse, PostToolUseFailure, Stop)"
     fi
 
     if [ -f "$CLAUDE_SETTINGS" ]; then

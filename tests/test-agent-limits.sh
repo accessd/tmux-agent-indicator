@@ -88,10 +88,10 @@ settings_command() {
 }
 
 original=$(settings_command "$TEST_DIR/claude/settings.json")
-CLAUDE_CONFIG_DIR="$TEST_DIR/claude" "$ROOT_DIR/install.sh" \
+TMUX_AGENT_STORE_DIR="$TEST_DIR/store" CLAUDE_CONFIG_DIR="$TEST_DIR/claude" "$ROOT_DIR/install.sh" \
     --target-dir "$TEST_DIR/plugin" --no-codex --no-opencode >/dev/null
 first=$(settings_command "$TEST_DIR/claude/settings.json")
-CLAUDE_CONFIG_DIR="$TEST_DIR/claude" "$ROOT_DIR/install.sh" \
+TMUX_AGENT_STORE_DIR="$TEST_DIR/store" CLAUDE_CONFIG_DIR="$TEST_DIR/claude" "$ROOT_DIR/install.sh" \
     --target-dir "$TEST_DIR/plugin" --no-codex --no-opencode >/dev/null
 second=$(settings_command "$TEST_DIR/claude/settings.json")
 [ "$first" = "$second" ] || {
@@ -99,7 +99,7 @@ second=$(settings_command "$TEST_DIR/claude/settings.json")
     exit 1
 }
 
-CLAUDE_CONFIG_DIR="$TEST_DIR/claude" "$ROOT_DIR/install.sh" \
+TMUX_AGENT_STORE_DIR="$TEST_DIR/store" CLAUDE_CONFIG_DIR="$TEST_DIR/claude" "$ROOT_DIR/install.sh" \
     --target-dir "$TEST_DIR/plugin" --uninstall-claude --no-codex --no-opencode >/dev/null
 restored=$(settings_command "$TEST_DIR/claude/settings.json")
 [ "$restored" = "$original" ] || {

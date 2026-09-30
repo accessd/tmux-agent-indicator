@@ -3,6 +3,8 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 if ! command -v tmux >/dev/null 2>&1; then
     exit 0
 fi
@@ -104,6 +106,7 @@ if [ "$state" = "needs-input" ]; then
 fi
 
 if [ "$window_done" = "1" ] || [ "$state" = "done" ] || [ "$done_marker" = "1" ]; then
+    done_agent=$(tmux_get_env "$agent_key")
     restore_window_title_style "$done_window"
     restore_window_option "$done_window" "pane-active-border-style" "$done_window_border_key"
     tmux_unset_env "$done_window_done_key"
@@ -131,6 +134,15 @@ if [ "$window_done" = "1" ] || [ "$state" = "done" ] || [ "$done_marker" = "1" ]
         tmux_unset_env "TMUX_AGENT_ANIMATION_PID"
         tmux_unset_env "TMUX_AGENT_ANIMATION_FRAME"
     fi
+
+    store_bin="${TMUX_AGENT_STORE_BIN:-$SCRIPT_DIR/../bin/agent-store}"
+    if [ -n "$done_agent" ] && [ -x "$store_bin" ]; then
+        "$store_bin" event --pane "$pane_id" --agent "$done_agent" --state idle >/dev/null 2>&1 || true
+    fi
+    while IFS=$'\t' read -r panel_pane panel_marker; do
+        [ "$panel_marker" = "1" ] || continue
+        tmux wait-for -S "agent-indicator-panel-${panel_pane#%}"
+    done < <(tmux list-panes -a -F $'#{pane_id}\t#{@agent-indicator-panel}')
 fi
 
 tmux refresh-client -S >/dev/null 2>&1 || true
