@@ -6,6 +6,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 
+GOPATH="$(env -u GOROOT go env GOPATH)"
+export GOPATH
 export HOME="$TEST_DIR/home"
 export TMUX_AGENT_LIMITS_CACHE_DIR="$TEST_DIR/cache"
 export CODEX_HOME="$HOME/.codex"
