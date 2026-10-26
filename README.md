@@ -63,6 +63,27 @@ This installs files to `~/.tmux/plugins/tmux-agent-indicator` and updates:
 
 After installing Codex hooks, run `/hooks` in Codex and trust the tmux-agent-indicator hook definitions before they can run.
 
+For Codex's shared local daemon, configure the native client title in `~/.codex/config.toml`
+(or `$CODEX_HOME/config.toml`) and restart the TUI clients:
+
+```toml
+[tui]
+terminal_title = ["app-name", "thread-id"]
+```
+
+Reload the plugin in every tmux server after installing so each server's socket is
+registered. The hook adapter matches the live client title against full thread IDs
+from the local daemon, then verifies the hook's session ID. It never routes daemon
+hooks using the daemon's inherited `TMUX_PANE`. Missing titles, unavailable APIs,
+colliding ID prefixes, and multiple matching clients leave pane styles unchanged.
+The installer migrates the old hooks but leaves your title configuration unchanged.
+Embedded Codex sessions use the native ancestor process's TTY instead.
+
+Shared-daemon routing is verified with Codex 0.164.0 and the default local control
+socket under `$CODEX_HOME` (default `~/.codex`). Remote/custom app-server endpoints
+are unsupported. See [routing details and verification](docs/CODEX-DAEMON-PANE-BINDING.md).
+
+
 Integration uninstall options:
 
 ```bash

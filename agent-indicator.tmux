@@ -55,6 +55,9 @@ register_notification_panel() {
 
 main() {
     tmux set-environment -g TMUX_AGENT_INDICATOR_DIR "$CURRENT_DIR"
+    if [ -x "$CURRENT_DIR/bin/codex-hook" ]; then
+        "$CURRENT_DIR/bin/codex-hook" --register-tmux "$(tmux display-message -p '#{socket_path}')" || true
+    fi
     update_tmux_option "status-right"
     update_tmux_option "status-left"
     update_tmux_option "@minimal-tmux-status-right"

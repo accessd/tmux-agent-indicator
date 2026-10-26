@@ -9,13 +9,16 @@ trap cleanup_test_server EXIT
 
 setup_test_server "state-transitions"
 
+stale_tmux="$(tmux_cmd display-message -p -t "$PANE" '#{socket_path}'),1,0"
+TMUX="$stale_tmux" TMUX_PANE=%999999 "$ROOT_DIR/scripts/agent-state.sh" --agent codex --state "done" >/dev/null 2>&1 || fail "a stale tmux pane should not fail the Codex Stop hook"
+
 PANEL_PANE="$(tmux_cmd split-window -dP -F '#{pane_id}' -t "$PANE")"
 tmux_cmd set-option -pt "$PANEL_PANE" @agent-indicator-panel 1
 panel_channel="agent-indicator-panel-${PANEL_PANE#%}"
 tmux_cmd wait-for "$panel_channel" \; set-environment -g PANEL_UPDATE_RECEIVED 1 &
 panel_waiter=$!
 
-rg -q -- '--state running --description-from-stdin' "$ROOT_DIR/hooks/codex-hooks.json" || fail "Codex prompt hook should capture the session description"
+rg -q -- 'codex-hook.sh --state running' "$ROOT_DIR/hooks/codex-hooks.json" || fail "Codex prompt hook should use the pane resolver"
 tmux_cmd run-shell "printf '%s' '{\"prompt\":\"Implement live status across panes\"}' | TMUX_PANE=$PANE \"$ROOT_DIR/scripts/agent-state.sh\" --agent codex --state running --description-from-stdin"
 description="$(get_env "TMUX_AGENT_PANE_${PANE}_DESCRIPTION")"
 [ "$description" = "Implement live status across panes" ] || fail "Codex prompt should become the pane description: $description"

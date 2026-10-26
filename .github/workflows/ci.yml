@@ -33,7 +33,7 @@ jobs:
         run: shellcheck -x -S warning agent-indicator.tmux scripts/*.sh install.sh setup.sh tests/*.sh tests/lib/*.sh
 
       - name: Check Python syntax
-        run: python3 -m py_compile scripts/agent-limits.py
+        run: python3 -m py_compile scripts/agent-limits.py tests/test-codex-hook-native.py
 
   test:
     runs-on: ubuntu-latest

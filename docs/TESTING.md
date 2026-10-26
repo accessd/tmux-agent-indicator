@@ -23,6 +23,8 @@ Run individual checks:
 ```bash
 ./tests/test-agent-limits.sh
 ./tests/test-agent-store.sh
+./tests/test-codex-hook.sh
+./tests/test-codex-hook-install.sh
 ./tests/test-state-transitions.sh
 ./tests/test-indicator-output.sh
 ./tests/test-notification-panel.sh
@@ -185,3 +187,15 @@ Optional screenshot capture:
 ```bash
 screencapture -x /tmp/tmux-agent-indicator-check.png
 ```
+
+## Codex shared-daemon routing
+
+See [the routing contract and native test](CODEX-DAEMON-PANE-BINDING.md) for the
+required title configuration and adapter verification with two real TUI clients.
+
+Before release, use trusted installed hooks and two Codex clients sharing one
+local daemon. Submit a prompt in the second pane, trigger a permission request,
+and finish the turn. Confirm only that pane changes through running, needs-input,
+and done; focusing it clears done. Repeat inside nested tmux and across two
+registered tmux servers. Check reconnect/resume and child-thread navigation;
+when two clients display the same session, the hook must leave styles unchanged.
