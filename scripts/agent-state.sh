@@ -11,7 +11,7 @@ Usage: agent-state.sh --agent <name> --state <running|needs-input|done|off> [--d
 EOF
 }
 
-if ! command -v tmux >/dev/null 2>&1 || [ -z "${TMUX:-}" ]; then
+if ! command -v tmux >/dev/null 2>&1 || [ -z "${TMUX:-}" ] || ! tmux list-panes -a >/dev/null 2>&1; then
     exit 0
 fi
 
@@ -196,7 +196,7 @@ apply_pane_style() {
 pane_exists() {
     local pane_id="$1"
     [ -n "$pane_id" ] || return 1
-    tmux display-message -p -t "$pane_id" '#{pane_id}' >/dev/null 2>&1
+    [ "$(tmux display-message -p -t "$pane_id" '#{pane_id}' 2>/dev/null)" = "$pane_id" ]
 }
 
 start_animation() {
@@ -279,7 +279,7 @@ resolve_target_pane() {
     fi
 
     if [ -z "$pane" ]; then
-        pane=$(tmux display-message -p '#{pane_id}')
+        pane=$(tmux display-message -p '#{pane_id}' 2>/dev/null || true)
     fi
 
     printf '%s\n' "$pane"
@@ -371,6 +371,7 @@ case "$state" in
 esac
 
 pane_id=$(resolve_target_pane "$agent")
+pane_exists "$pane_id" || exit 0
 description=""
 if [ "$description_from_stdin" = true ]; then
     description=$(python3 -c 'import json, sys; value = json.load(sys.stdin).get("prompt", ""); print(" ".join(value.split())[:120] if isinstance(value, str) else "")' 2>/dev/null || true)

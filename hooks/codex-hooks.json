@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${TMUX_AGENT_INDICATOR_DIR:-$HOME/.tmux/plugins/tmux-agent-indicator}\"/scripts/agent-state.sh --agent codex --state running --description-from-stdin",
+            "command": "\"${TMUX_AGENT_INDICATOR_DIR:-$HOME/.tmux/plugins/tmux-agent-indicator}\"/scripts/codex-hook.sh --state running",
             "statusMessage": "tmux: codex running"
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${TMUX_AGENT_INDICATOR_DIR:-$HOME/.tmux/plugins/tmux-agent-indicator}\"/scripts/agent-state.sh --agent codex --state needs-input",
+            "command": "\"${TMUX_AGENT_INDICATOR_DIR:-$HOME/.tmux/plugins/tmux-agent-indicator}\"/scripts/codex-hook.sh --state needs-input",
             "statusMessage": "tmux: codex needs input"
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${TMUX_AGENT_INDICATOR_DIR:-$HOME/.tmux/plugins/tmux-agent-indicator}\"/scripts/agent-state.sh --agent codex --state done",
+            "command": "\"${TMUX_AGENT_INDICATOR_DIR:-$HOME/.tmux/plugins/tmux-agent-indicator}\"/scripts/codex-hook.sh --state done",
             "statusMessage": "tmux: codex done"
           }
         ]

@@ -152,6 +152,7 @@ if [ -x "$TARGET_DIR/bin/agent-store" ]; then
     "$TARGET_DIR/bin/agent-store" stop >/dev/null 2>&1 || true
 fi
 (cd "$SCRIPT_DIR" && env -u GOROOT go build -o "$TARGET_DIR/bin/agent-store" ./cmd/agent-store)
+(cd "$SCRIPT_DIR" && env -u GOROOT go build -o "$TARGET_DIR/bin/codex-hook" ./cmd/codex-hook)
 
 cp "$SCRIPT_DIR/agent-indicator.tmux" "$TARGET_DIR/"
 cp "$SCRIPT_DIR/README.md" "$TARGET_DIR/"
@@ -163,7 +164,7 @@ cp "$SCRIPT_DIR/hooks/"*.json "$TARGET_DIR/hooks/"
 cp "$SCRIPT_DIR/plugins/"*.js "$TARGET_DIR/plugins/"
 cp "$SCRIPT_DIR/setup.sh" "$TARGET_DIR/"
 
-chmod +x "$TARGET_DIR/agent-indicator.tmux" "$TARGET_DIR/bin/agent-store" "$TARGET_DIR/scripts/"*.sh "$TARGET_DIR/scripts/"*.py "$TARGET_DIR/setup.sh"
+chmod +x "$TARGET_DIR/agent-indicator.tmux" "$TARGET_DIR/bin/agent-store" "$TARGET_DIR/bin/codex-hook" "$TARGET_DIR/scripts/"*.sh "$TARGET_DIR/scripts/"*.py "$TARGET_DIR/setup.sh"
 
 if [ "$INSTALL_CLAUDE" = true ] || [ "$UNINSTALL_CLAUDE" = true ]; then
     CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
@@ -333,6 +334,8 @@ if [ "$INSTALL_CODEX" = true ] || [ "$UNINSTALL_CODEX" = true ]; then
         echo "Codex detected"
         echo "  Hooks -> $CODEX_HOOKS (UserPromptSubmit, PermissionRequest, Stop)"
         echo "  Next: run /hooks in Codex and trust the tmux-agent-indicator hooks"
+        echo '  Shared daemon: set [tui] terminal_title = ["app-name", "thread-id"] in config.toml and restart Codex'
+        echo '  Reload the tmux plugin to register this server for Codex hooks'
     fi
 
     if [ -f "$CODEX_HOOKS" ]; then
@@ -366,7 +369,7 @@ if not isinstance(hooks, dict):
     hooks = {}
 
 def is_plugin_command(command):
-    return "scripts/agent-state.sh" in command and "--agent codex --state" in command
+    return ("scripts/agent-state.sh" in command and "--agent codex --state" in command) or "scripts/codex-hook.sh" in command
 
 for event in list(hooks.keys()):
     entries = hooks.get(event, [])
