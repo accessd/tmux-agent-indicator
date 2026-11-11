@@ -18,7 +18,7 @@ When the agent finishes, the window title background/foreground changes and the 
 
 The plugin tracks three states per pane: `running`, `needs-input`, and `done`.
 
-State transitions are driven by hooks. Claude Code and Codex fire hooks on prompt submit, permission request, and stop. OpenCode uses its plugin system. Any other agent can call `agent-state.sh` directly from a wrapper script or hook.
+State transitions are driven by hooks. Claude Code and Codex fire hooks on prompt submit, permission request, and stop. OpenCode uses its plugin system, and omp an extension. Any other agent can call `agent-state.sh` directly from a wrapper script or hook.
 
 Each state can change:
 - Pane border color
@@ -404,6 +404,24 @@ To install manually without the installer, copy the plugin file:
 mkdir -p ~/.config/opencode/plugins
 cp plugins/opencode-tmux-agent-indicator.js ~/.config/opencode/plugins/
 ```
+
+## omp Extension
+
+`plugins/omp-tmux-agent-indicator.ts` drives the indicator from [oh-my-pi](https://github.com/can1357/oh-my-pi) lifecycle events, ignoring subagent sessions:
+- `agent_start` -> `running`
+- `tool_approval_requested`, `ask` tool start -> `needs-input`
+- `tool_approval_resolved`, `ask` tool end -> `running`
+- `agent_end` -> `done`
+- `session_shutdown` -> `off`
+
+omp auto-loads extensions from `~/.omp/agent/extensions/`. Symlink the file so it keeps using the scripts next to it:
+
+```bash
+mkdir -p ~/.omp/agent/extensions
+ln -s ~/.tmux/plugins/tmux-agent-indicator/plugins/omp-tmux-agent-indicator.ts ~/.omp/agent/extensions/tmux-agent-indicator.ts
+```
+
+A copied file falls back to `$TMUX_AGENT_INDICATOR_DIR`, then `~/.tmux/plugins/tmux-agent-indicator`. Add `omp` to `@agent-indicator-processes` and `@agent-indicator-icons` to show its icon before the first event.
 
 ## License
 
