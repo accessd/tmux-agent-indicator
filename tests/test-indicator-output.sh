@@ -25,4 +25,23 @@ run_state off
 indicator_off="$(run_indicator_capture "$PANE")"
 assert_empty "$indicator_off" "indicator should be empty after off"
 
-pass "indicator output for running/off"
+tmux_cmd set -g @agent-indicator-icons 'claude=AGENT'
+tmux_cmd set -g @agent-indicator-state-icons 'running=RUN, needs-input=ASK'
+
+run_state running
+indicator_state_icon="$(run_indicator_capture "$PANE")"
+case "$indicator_state_icon" in
+    *RUN*) ;;
+    *) fail "state icon should override agent icon for running: $indicator_state_icon" ;;
+esac
+
+run_state done
+indicator_agent_fallback="$(run_indicator_capture "$PANE")"
+case "$indicator_agent_fallback" in
+    *AGENT*) ;;
+    *) fail "agent icon should be used for states without a state icon: $indicator_agent_fallback" ;;
+esac
+
+run_state off
+
+pass "indicator output for running/off and state icons"

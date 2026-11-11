@@ -225,6 +225,10 @@ set -g @agent-indicator-done-window-title-fg 'black'
 # Per-agent icons
 set -g @agent-indicator-icons 'claude=🤖,codex=🧠,opencode=💻,default=🤖'
 
+# Per-state icons for hook-reported states, e.g. 'running=⚡,needs-input=❓,done=✅'
+# (override per-agent icons; states without an entry fall back to them)
+set -g @agent-indicator-state-icons ''
+
 # Process fallback detection
 set -g @agent-indicator-processes 'claude,codex,aider,cursor,opencode'
 

@@ -101,6 +101,7 @@ fi
 if ! tmux_option_is_set "@agent-indicator-icons" && [ -z "$ICONS" ]; then
     ICONS="claude=🤖,codex=🧠,opencode=💻,default=🤖"
 fi
+STATE_ICONS=$(tmux_get_option_or_default "@agent-indicator-state-icons" "")
 PROCESSES=$(tmux_get_option_or_default "@agent-indicator-processes" "claude,codex,aider,cursor,opencode")
 INDICATOR_ENABLED=$(tmux_get_option_or_default "@agent-indicator-indicator-enabled" "on")
 ANIMATION_ENABLED=$(tmux_get_option_or_default "@agent-indicator-animation-enabled" "off")
@@ -120,11 +121,28 @@ WINDOW_ID=$(tmux display-message -p '#{window_id}')
 STATE=$(tmux_get_env "TMUX_AGENT_PANE_${PANE_ID}_STATE")
 AGENT=$(tmux_get_env "TMUX_AGENT_PANE_${PANE_ID}_AGENT")
 
+# Icon for a hook-reported state from @agent-indicator-state-icons
+# (`running=…,needs-input=…,done=…`); fails when the state has none.
+icon_for_state() {
+    local state="$1"
+    local pair key value
+    IFS=',' read -r -a pairs <<< "$STATE_ICONS"
+    for pair in "${pairs[@]}"; do
+        key=$(trim "${pair%%=*}")
+        value=$(trim "${pair#*=}")
+        if [ "$key" = "$state" ] && [ -n "$value" ]; then
+            printf '%s\n' "$value"
+            return 0
+        fi
+    done
+    return 1
+}
+
 output_indicator() {
     local state="$1"
     local agent="$2"
     local icon
-    icon=$(icon_for_agent "$agent" "$ICONS")
+    icon=$(icon_for_state "$state") || icon=$(icon_for_agent "$agent" "$ICONS")
 
     if [ "$state" = "running" ] && is_animation_enabled; then
         local frame
