@@ -83,6 +83,42 @@ Reload tmux:
 tmux source-file ~/.tmux.conf
 ```
 
+### Nix / Home Manager
+
+The flake provides the plugin as `packages.<system>.default` and a Home Manager module as `homeModules.default`:
+
+```nix
+# flake.nix
+inputs.tmux-agent-indicator = {
+  url = "github:accessd/tmux-agent-indicator";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+
+# home-manager modules
+imports = [ inputs.tmux-agent-indicator.homeModules.default ];
+
+programs.tmux.agentIndicator = {
+  enable = true;
+  # @agent-indicator-* options without the prefix; booleans become on/off
+  settings = {
+    icons = "claude=🤖,codex=🧠,default=🤖";
+    notification-enabled = false;
+  };
+  # Emitted just before the plugin loads, so #{agent_indicator} is expanded
+  extraConfig = ''
+    set -g status-right "#{agent_indicator} | %H:%M"
+  '';
+  integrations = {
+    claude.enable = true; # merges hooks into ~/.claude/settings.json on activation
+    codex.enable = true; # merges hooks into ~/.codex/hooks.json; trust them with /hooks
+    opencode.enable = true; # links the plugin into ~/.config/opencode/plugins
+    omp.enable = true; # links the extension into ~/.omp/agent/extensions
+  };
+};
+```
+
+Hooks point at the store copy of the plugin, and hooks from older generations are replaced on each switch. `programs.tmux.agentIndicator.dir` is the plugin directory, for calling its scripts (for example `session-attention.sh`) from other configuration. The module does not wrap Claude's status line, so `#{agent_limits}` uses `~/.claude.json` for Claude.
+
 ## Status Bar Integration
 
 For native status:

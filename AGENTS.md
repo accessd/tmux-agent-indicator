@@ -8,6 +8,7 @@ This repository is a tmux plugin written in Bash.
 - `scripts/pane-focus-in.sh`: clears deferred `done` styling when pane/window focus changes.
 - `scripts/indicator.sh`: status segment renderer (icons + process/state detection).
 - `hooks/`: Claude and Codex hook templates.
+- `flake.nix`, `nix/`: Nix package (`nix/package.nix`) and Home Manager module (`nix/hm-module.nix`, `programs.tmux.agentIndicator`).
 - `docs/`: product notes and testing docs (`docs/PRD.md`, `docs/TESTING.md`, assets).
 
 Keep runtime logic in `scripts/`; keep `agent-indicator.tmux` focused on bootstrap/hook wiring.
