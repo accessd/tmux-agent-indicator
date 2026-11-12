@@ -168,6 +168,24 @@ set -g @agent-indicator-session-dots-attention-states 'needs-input,done'
 
 The current session always shows as the active dot, even if it also has agents needing attention.
 
+### Session attention
+
+`scripts/session-attention.sh` reports the same attention set for other tools (session pickers, custom status segments). A session counts while one of its panes is in an `@agent-indicator-session-dots-attention-states` state and it hasn't been marked seen; `needs-input` outranks `done`.
+
+```sh
+# One line per session: <session>\t<state>\t<window-title-bg>\t<window-title-fg>
+scripts/session-attention.sh --exclude "$(tmux display-message -p '#S')"
+
+# Window-title background of the most urgent session, or the fallback
+scripts/session-attention.sh --exclude "$current" --color colour4
+```
+
+The colours are the window-title colours that state applies (`@agent-indicator-<state>-window-title-bg/fg`), so a status segment can match them:
+
+```tmux
+set -g status-left "#[fg=#(/path/to/scripts/session-attention.sh --exclude '#S' --color colour4)]● #[default]#S "
+```
+
 ## Configuration
 
 Quick start with the most useful options:

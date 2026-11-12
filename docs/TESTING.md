@@ -27,6 +27,7 @@ Run individual checks:
 ./tests/test-focus-reset-done.sh
 ./tests/test-window-title-reset.sh
 ./tests/test-running-animation.sh
+./tests/test-session-attention.sh
 ```
 
 Check live provider limits without the tmux cache:
