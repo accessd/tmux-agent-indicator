@@ -18,7 +18,7 @@ When the agent finishes, the window title background/foreground changes and the 
 
 The plugin tracks three states per pane: `running`, `needs-input`, and `done`.
 
-State transitions are driven by hooks. Claude Code and Codex fire hooks on prompt submit, permission request, and stop. OpenCode uses its plugin system, and omp an extension. Any other agent can call `agent-state.sh` directly from a wrapper script or hook.
+State transitions are driven by hooks. Claude Code and Codex fire hooks on prompt submit, permission request, tool completion (back to `running` after an approved permission request), and stop. OpenCode uses its plugin system, and omp an extension. Any other agent can call `agent-state.sh` directly from a wrapper script or hook.
 
 Each state can change:
 - Pane border color
@@ -27,6 +27,8 @@ Each state can change:
 - Status bar icon (per-agent, e.g. `claude=🤖`, `codex=🧠`)
 
 States reset when you focus the pane/window, or on the next transition.
+
+Window title and active-border styles are shared by every pane of a window. With several agents in one window they show the most urgent state (`needs-input` > `done` > `running`). Your own window styles come back once no agent pane needs them. When a pane closes, its state is dropped and its window styling is restored.
 
 ## Features
 
@@ -38,7 +40,7 @@ States reset when you focus the pane/window, or on the next transition.
 
 ## Requirements
 
-tmux 3.1+, bash 4+, Python 3
+tmux 3.1+ (`@agent-indicator-notification-duration` needs tmux 3.2+; older versions fall back to `display-time`), bash 4+, Python 3
 
 ## Installation
 
@@ -48,26 +50,30 @@ tmux 3.1+, bash 4+, Python 3
 curl -fsSL https://raw.githubusercontent.com/accessd/tmux-agent-indicator/main/install.sh | bash
 ```
 
-The installer will offer to run the interactive color setup wizard. You can also run it later:
+The installer will offer to run the interactive color setup wizard (it reads from your terminal, so this also works under `curl | bash`). You can also run it later:
 
 ```bash
 bash ~/.tmux/plugins/tmux-agent-indicator/setup.sh
 ```
 
 This installs files to `~/.tmux/plugins/tmux-agent-indicator` and updates:
-- `~/.claude/settings.json` hooks for Claude (`UserPromptSubmit`, `PermissionRequest`, `Stop`)
-- `~/.codex/hooks.json` hooks for Codex (`UserPromptSubmit`, `PermissionRequest`, `Stop`)
+- `~/.claude/settings.json` hooks for Claude (`UserPromptSubmit`, `PermissionRequest`, `PostToolUse`, `PostToolUseFailure`, `Stop`); honors `CLAUDE_CONFIG_DIR`
+- `~/.codex/hooks.json` hooks for Codex (`UserPromptSubmit`, `PermissionRequest`, `PostToolUse`, `Stop`); honors `CODEX_HOME` (or `CODEX_CONFIG_DIR`)
 - `~/.config/opencode/plugins/` plugin for OpenCode
+
+The installer refuses to touch a settings/hooks file that is not valid JSON (it exits with an error and leaves the file as is). Before rewriting a file it saves the previous content to `<file>.bak`.
 
 After installing Codex hooks, run `/hooks` in Codex and trust the tmux-agent-indicator hook definitions before they can run.
 
-Integration uninstall options:
+Integration uninstall options (only the requested removals run; nothing is copied or installed):
 
 ```bash
 ./install.sh --uninstall-claude
 ./install.sh --uninstall-codex
 ./install.sh --uninstall-opencode
 ```
+
+Uninstalling only removes the plugin's hooks (and unwraps the Claude status line); all other settings are preserved.
 
 ### TPM
 
@@ -117,7 +123,9 @@ programs.tmux.agentIndicator = {
 };
 ```
 
-Hooks point at the store copy of the plugin, and hooks from older generations are replaced on each switch. `programs.tmux.agentIndicator.dir` is the plugin directory, for calling its scripts (for example `session-attention.sh`) from other configuration. The module does not wrap Claude's status line, so `#{agent_limits}` uses `~/.claude.json` for Claude.
+Hooks point at the store copy of the plugin, and hooks from older generations are replaced on each switch. `programs.tmux.agentIndicator.dir` is the plugin directory, for calling its scripts (for example `session-attention.sh`) from other configuration. The module does not wrap Claude's status line, so `#{agent_limits}` uses `~/.claude.json` for Claude. The package bundles its own `python3` for `#{agent_limits}`, so no global Python is needed.
+
+Turning off `claude.enable` or `codex.enable` (or the whole module while it is still imported) removes the store-path hooks the module merged earlier on the next switch, so they don't dangle after garbage collection. Only hooks pointing into the Nix store are removed; hooks from a TPM/`install.sh` setup, your own hooks, and unrelated keys are kept, and the file is never created. If you drop the module import entirely, nothing runs on activation: set `enable = false` for one switch first, or delete the hooks by hand.
 
 ## Status Bar Integration
 
@@ -283,13 +291,16 @@ set -g @agent-indicator-icons 'claude=🤖,codex=🧠,opencode=💻,default=🤖
 # (override per-agent icons; states without an entry fall back to them)
 set -g @agent-indicator-state-icons ''
 
-# Process fallback detection
+# Process fallback detection: a pane counts as running an agent when a process
+# on its tty has one of these names as executable (argv[0] basename, or the
+# script basename for `node`/`bun`/`deno`/`python`/`ruby` launchers).
+# Names appearing only as arguments (`vim ~/.claude/settings.json`) do not match.
 set -g @agent-indicator-processes 'claude,codex,aider,cursor,opencode'
 
 # Keep pane colors until pane focus-in after done
 set -g @agent-indicator-reset-on-focus 'on'
 
-# Running animation in status indicator
+# Running animation in status indicator (speed: milliseconds per frame)
 set -g @agent-indicator-animation-enabled 'off'
 set -g @agent-indicator-animation-speed '300'
 
@@ -318,7 +329,7 @@ set -g @agent-indicator-needs-input-bg 'colour94'
 set -g @agent-indicator-done-bg 'green'
 ```
 
-Empty option values are treated as "do not apply this property" (for toggles, empty behaves as disabled). Example:
+Empty option values are treated as "do not apply this property" (for toggles, empty behaves as disabled). `default` resets the property (pane background to the terminal default, border to the window's original style). A disabled channel (`@agent-indicator-background-enabled` / `-border-enabled` set to `off`) resets it for every state. Example:
 
 ```tmux
 set -g @agent-indicator-done-bg ''
@@ -401,13 +412,13 @@ set -g @agent-indicator-notification-states 'done'
 # Custom format
 set -g @agent-indicator-notification-format '#{agent_name} is #{agent_state} in #{session_name}'
 
-# Duration in milliseconds (0 = use tmux default display-time)
+# Duration in milliseconds (0 = use tmux default display-time; needs tmux 3.2+)
 set -g @agent-indicator-notification-duration '3000'
 ```
 
 Available format placeholders: `#{agent_name}`, `#{agent_state}`, `#{session_name}`, `#{window_name}`, `#{window_index}`.
 
-You can also run an external command on each notification. The command receives environment variables `AGENT_NAME`, `AGENT_STATE`, `AGENT_SESSION`, and `AGENT_WINDOW`:
+You can also run an external command on each notification. It runs in the background, detached from the agent hook's input and output. The command receives environment variables `AGENT_NAME`, `AGENT_STATE`, `AGENT_SESSION`, and `AGENT_WINDOW`:
 
 ```tmux
 # Log notifications to a file
@@ -428,7 +439,7 @@ To integrate any agent that does not have built-in hook support, call `agent-sta
 ~/.tmux/plugins/tmux-agent-indicator/scripts/agent-state.sh --agent claude --state off
 ```
 
-`--state off` always resets pane background and border immediately.
+`--state off` always resets pane background and border immediately. `--state running` also clears leftover `done`/`needs-input` styling of its pane, so you don't need to send `off` before it. Repeated `running` reports for a pane that is already running return right away, so you can send them after every tool call.
 
 ## Hook Templates
 
@@ -441,6 +452,7 @@ The installer uses these templates as the source for Claude and Codex hook confi
 They map:
 - `UserPromptSubmit` -> `running`
 - `PermissionRequest` -> `needs-input`
+- `PostToolUse` (and `PostToolUseFailure` for Claude) -> `running`, so an approved permission request goes back to running
 - `Stop` -> `done`
 
 Codex hooks must be reviewed and trusted with `/hooks` before they can run.
@@ -459,13 +471,15 @@ mkdir -p ~/.config/opencode/plugins
 cp plugins/opencode-tmux-agent-indicator.js ~/.config/opencode/plugins/
 ```
 
+Only the root session drives the pane: events from subagent (task tool) sessions are ignored. A plugin file that is symlinked from a checkout or Nix store path (its real location has `../scripts/agent-state.sh`) uses those scripts; a copied file falls back to `$TMUX_AGENT_INDICATOR_DIR`, then `~/.tmux/plugins/tmux-agent-indicator`.
+
 ## omp Extension
 
 `plugins/omp-tmux-agent-indicator.ts` drives the indicator from [oh-my-pi](https://github.com/can1357/oh-my-pi) lifecycle events, ignoring subagent sessions:
 - `agent_start` -> `running`
 - `tool_approval_requested`, `ask` tool start -> `needs-input`
 - `tool_approval_resolved`, `ask` tool end -> `running`
-- `agent_end` -> `done`
+- `agent_end` -> `done`, only when the end is terminal (an auto-retry, compaction continuation or pending background-job delivery keeps `running`)
 - `session_shutdown` -> `off`
 
 omp auto-loads extensions from `~/.omp/agent/extensions/`. Symlink the file so it keeps using the scripts next to it:

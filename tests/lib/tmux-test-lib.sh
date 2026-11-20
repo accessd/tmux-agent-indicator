@@ -12,6 +12,7 @@ WIN=""
 OTHER_PANE=""
 OTHER_WIN=""
 TEST_TMP_FILES=()
+TEST_TMP_DIR=""
 
 tmux_cmd() {
     env -u TMUX tmux -L "$SOCK" "$@"
@@ -29,11 +30,22 @@ cleanup_test_server() {
     for path in "${TEST_TMP_FILES[@]:-}"; do
         rm -f "$path" >/dev/null 2>&1 || true
     done
+    if [ -n "${TEST_TMP_DIR:-}" ]; then
+        rm -rf "$TEST_TMP_DIR" >/dev/null 2>&1 || true
+    fi
+}
+
+# Print a fresh temp file path inside the per-run directory. Safe to call
+# inside $(...): cleanup removes the whole directory, so nothing needs to be
+# registered from the (child) subshell.
+new_tmp_file() {
+    mktemp "$TEST_TMP_DIR/out.XXXXXX"
 }
 
 setup_test_server() {
     local name="${1:-test}"
     SOCK="agent-test-${name}-$$"
+    TEST_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/tmux-agent-indicator-test.XXXXXX")"
 
     tmux_cmd -f /dev/null new-session -d -s ai -n main
     tmux_cmd set -g status-right '#{agent_indicator} | %H:%M'
@@ -69,12 +81,18 @@ get_window_option() {
     tmux_cmd show-window-option -v -t "$window_id" "$option" 2>/dev/null || true
 }
 
+# Run indicator.sh from a run-shell job and print its output. A second
+# argument is passed as the indicator's pane id argument, like the status line
+# does with `#{pane_id}`; without it tmux picks the current pane itself.
 run_indicator_capture() {
     local pane_id="${1:-$PANE}"
-    local out_file="/tmp/tmux-agent-indicator-${SOCK}-${RANDOM}.out"
-    register_tmp_file "$out_file"
-    tmux_cmd run-shell "TMUX_PANE=$pane_id \"$REPO_ROOT/scripts/indicator.sh\" > \"$out_file\""
-    sleep 0.05
+    local out_file
+    out_file="$(new_tmp_file)"
+    if [ "$#" -ge 2 ]; then
+        tmux_cmd run-shell "TMUX_PANE=$pane_id \"$REPO_ROOT/scripts/indicator.sh\" '$2' > \"$out_file\""
+    else
+        tmux_cmd run-shell "TMUX_PANE=$pane_id \"$REPO_ROOT/scripts/indicator.sh\" > \"$out_file\""
+    fi
     cat "$out_file" 2>/dev/null || true
 }
 

@@ -20,50 +20,35 @@ if ! tmux list-sessions >/dev/null 2>&1; then
     exit 0
 fi
 
-tmux_get_option_or_default() {
-    local option="$1"
-    local default_value="$2"
-    local raw
-    raw=$(tmux show-option -gq "$option" 2>/dev/null || true)
-    if [ -n "$raw" ]; then
-        tmux show-option -gqv "$option"
-    else
-        printf '%s\n' "$default_value"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/state-lib.sh
+source "$SCRIPT_DIR/state-lib.sh"
+
+# Convert a millisecond count to a sleep(1) argument (1500 -> 1.500).
+# Anything but a positive integer falls back to the 300ms default.
+ms_to_sleep_arg() {
+    local ms="$1"
+    if ! [[ "$ms" =~ ^[0-9]+$ ]] || [ "$((10#$ms))" -le 0 ]; then
+        ms=300
     fi
+    ms=$((10#$ms))
+    printf '%d.%03d\n' "$((ms / 1000))" "$((ms % 1000))"
 }
 
 # Store our PID so agent-state.sh can kill us.
 tmux set-environment -g TMUX_AGENT_ANIMATION_PID "$$"
 
-speed_ms=$(tmux_get_option_or_default "@agent-indicator-animation-speed" "300")
-# Convert ms to fractional seconds for sleep.
-# Pad to 3 digits so printf produces correct decimal: 50 -> 050 -> 0.050
-padded=$(printf '%03d' "$speed_ms" 2>/dev/null || printf '%s' "$speed_ms")
-sleep_arg="0.${padded}"
-if [ "$speed_ms" -ge 1000 ] 2>/dev/null; then
-    sleep_arg="1"
-fi
+sleep_arg=$(ms_to_sleep_arg "$(tmux_get_option_or_default "@agent-indicator-animation-speed" "300")")
 
 # Bounce sequence: 0 1 2 3 4 5 6 5 4 3 2 1 (12 frames total)
 frames=(0 1 2 3 4 5 6 5 4 3 2 1)
 frame_count=${#frames[@]}
 idx=0
 
-any_pane_running() {
-    tmux show-environment -g 2>/dev/null | grep -q '_STATE=running'
-}
-
-while true; do
-    # Self-terminate if tmux server is gone.
-    if ! tmux list-sessions >/dev/null 2>&1; then
-        break
-    fi
-
-    # Self-terminate if no pane is in running state.
-    if ! any_pane_running; then
-        break
-    fi
-
+# Self-terminate once no live pane is running (also when the server is gone:
+# the scan then finds nothing). Panes closed while running are pruned so their
+# stale state cannot keep the loop alive.
+while any_live_pane_running; do
     frame="${frames[$idx]}"
     tmux set-environment -g TMUX_AGENT_ANIMATION_FRAME "$frame" 2>/dev/null || break
     tmux refresh-client -S 2>/dev/null || true
@@ -71,3 +56,5 @@ while true; do
     idx=$(( (idx + 1) % frame_count ))
     sleep "$sleep_arg" 2>/dev/null || sleep 1
 done
+
+prune_dead_panes

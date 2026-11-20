@@ -12,7 +12,7 @@ This guide defines repeatable checks for `tmux-agent-indicator` in automated and
 
 Preferred: run executable test scripts from `tests/`.
 
-Run all checks:
+Run all checks (every `tests/test-*.sh`, in sorted order, stopping at the first failure):
 
 ```bash
 ./tests/run-all.sh
@@ -28,6 +28,15 @@ Run individual checks:
 ./tests/test-window-title-reset.sh
 ./tests/test-running-animation.sh
 ./tests/test-session-attention.sh
+./tests/test-pane-style-preserves-focus.sh
+./tests/test-window-option-restore.sh    # user per-window styles restored after off
+./tests/test-multi-pane-focus.sh         # focusing a done window keeps a running pane's state
+./tests/test-window-style-aggregate.sh   # window styling shows the most urgent pane state
+./tests/test-animation-multi-pane.sh     # animation survives another pane leaving running
+./tests/test-prune-dead-pane.sh         # closed panes pruned (pane-exited/pane-died/after-kill-pane/window-unlinked)
+./tests/test-empty-value-semantics.sh    # '' skips a property, 'default' resets it
+./tests/test-running-clean-slate.sh     # running resets stale done/needs-input styling; fast path
+./tests/test-hook-dedupe.sh             # reload replaces hooks from any install path
 ```
 
 Check live provider limits without the tmux cache:
@@ -63,8 +72,8 @@ tmux -L "$SOCK" run-shell "TMUX_PANE=$PANE \"$PWD/scripts/agent-state.sh\" --age
 Core assertions:
 
 ```bash
-tmux -L "$SOCK" show-window-options -vt "$WIN" | rg 'pane-active-border-style|window-status'
-tmux -L "$SOCK" run-shell "TMUX_PANE=$PANE \"$PWD/scripts/indicator.sh\" > /tmp/agent-indicator.out"
+tmux -L "$SOCK" show-window-options -vt "$WIN" | grep -E 'pane-active-border-style|window-status'
+tmux -L "$SOCK" run-shell "\"$PWD/scripts/indicator.sh\" \"$PANE\" > /tmp/agent-indicator.out"
 cat /tmp/agent-indicator.out
 ```
 
@@ -73,7 +82,7 @@ Focus-reset check:
 ```bash
 tmux -L "$SOCK" run-shell "TMUX_PANE=$PANE \"$PWD/scripts/agent-state.sh\" --agent claude --state done"
 tmux -L "$SOCK" run-shell "$PWD/scripts/pane-focus-in.sh \"$PANE\" \"$WIN\""
-tmux -L "$SOCK" show-window-options -vt "$WIN" | rg 'window-status'
+tmux -L "$SOCK" show-window-options -vt "$WIN" | grep 'window-status'
 ```
 
 Window-switch title reset check:
@@ -84,7 +93,7 @@ OTHER_PANE="$(tmux -L "$SOCK" display-message -p -t ai:other.0 '#{pane_id}')"
 OTHER_WIN="$(tmux -L "$SOCK" display-message -p -t ai:other.0 '#{window_id}')"
 tmux -L "$SOCK" run-shell "TMUX_PANE=$PANE \"$PWD/scripts/agent-state.sh\" --agent claude --state needs-input"
 tmux -L "$SOCK" run-shell "$PWD/scripts/pane-focus-in.sh \"$OTHER_PANE\" \"$OTHER_WIN\""
-tmux -L "$SOCK" show-window-options -vt "$WIN" | rg 'window-status'
+tmux -L "$SOCK" show-window-options -vt "$WIN" | grep 'window-status'
 ```
 
 Window-switch title reset assertion (fails if style clears before returning to source window, or does not clear after returning):
@@ -131,9 +140,9 @@ done
 first_frame="$(tmux -L "$SOCK" show-environment -g TMUX_AGENT_ANIMATION_FRAME 2>/dev/null | sed 's/^[^=]*=//' || true)"
 [ -n "$first_frame" ] || { echo "FAIL: first animation frame is empty"; exit 1; }
 
-tmux -L "$SOCK" run-shell "TMUX_PANE=$PANE \"$PWD/scripts/indicator.sh\" > /tmp/agent-indicator.out"
+tmux -L "$SOCK" run-shell "\"$PWD/scripts/indicator.sh\" \"$PANE\" > /tmp/agent-indicator.out"
 indicator_output="$(cat /tmp/agent-indicator.out)"
-printf '%s' "$indicator_output" | rg -q '━' || { echo "FAIL: indicator bar is missing while running"; exit 1; }
+printf '%s' "$indicator_output" | grep -q '━' || { echo "FAIL: indicator bar is missing while running"; exit 1; }
 
 changed=0
 for _ in $(seq 1 20); do

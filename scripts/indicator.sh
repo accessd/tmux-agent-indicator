@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Status bar indicator - shows agent icon from pane state or process detection.
+# Usage: indicator.sh [pane_id]   (defaults to the caller's current pane)
 
 set -euo pipefail
 
@@ -114,10 +115,18 @@ case "$INDICATOR_ENABLED" in
         ;;
 esac
 
-# Get current pane
-PANE_ID=$(tmux display-message -p '#{pane_id}')
-PANE_TTY=$(tmux display-message -p '#{pane_tty}')
-WINDOW_ID=$(tmux display-message -p '#{window_id}')
+# Pane to render: the id passed by the status line (`#{pane_id}` is expanded
+# per client, so each client's status shows its own pane), else the caller's
+# current pane.
+PANE_ID="${1:-}"
+if [ -z "$PANE_ID" ]; then
+    PANE_ID=$(tmux display-message -p '#{pane_id}' 2>/dev/null || true)
+fi
+[ -n "$PANE_ID" ] || exit 0
+# window_id first: pane_tty may be empty and would be lost by `read` otherwise.
+PANE_INFO=$(tmux display-message -p -t "$PANE_ID" '#{window_id} #{pane_tty}' 2>/dev/null || true)
+IFS=' ' read -r WINDOW_ID PANE_TTY <<< "$PANE_INFO"
+[ -n "$WINDOW_ID" ] || exit 0
 STATE=$(tmux_get_env "TMUX_AGENT_PANE_${PANE_ID}_STATE")
 AGENT=$(tmux_get_env "TMUX_AGENT_PANE_${PANE_ID}_AGENT")
 
@@ -162,44 +171,79 @@ if [ -n "$STATE" ] && [ "$STATE" != "off" ]; then
 fi
 
 # Method 2: Check other panes in current window
-while IFS=' ' read -r other_pane _ other_active; do
-    [ "$other_active" = "1" ] && continue
+while IFS= read -r other_pane; do
+    [ "$other_pane" != "$PANE_ID" ] || continue
     other_state=$(tmux_get_env "TMUX_AGENT_PANE_${other_pane}_STATE")
     other_agent=$(tmux_get_env "TMUX_AGENT_PANE_${other_pane}_AGENT")
     if [ -n "$other_state" ] && [ "$other_state" != "off" ]; then
         output_indicator "$other_state" "$other_agent"
         exit 0
     fi
-done < <(tmux list-panes -t "$WINDOW_ID" -F '#{pane_id} #{pane_tty} #{pane_active}')
+done < <(tmux list-panes -t "$WINDOW_ID" -F '#{pane_id}')
 
-# Method 3: Process detection fallback in current pane
-if [ -n "$PANE_TTY" ]; then
-    IFS=',' read -ra PROC_ARRAY <<< "$PROCESSES"
-    for proc in "${PROC_ARRAY[@]}"; do
+# Process detection matches the executable name, not any word of the command
+# line (`vim ~/.claude/settings.json` is not claude). A process counts as
+# `proc` when basename(argv[0]) is `proc`, or when argv[0] is an interpreter
+# (node, bun, ...) and the first non-option argument, i.e. the script, has
+# basename `proc` (`node /usr/lib/node_modules/.bin/codex`).
+tty_process_names() {
+    local tty_name="${1#/dev/}"
+    local line word
+    local -a words
+
+    while IFS= read -r line; do
+        read -r -a words <<< "$line"
+        [ "${#words[@]}" -gt 0 ] || continue
+        printf '%s\n' "${words[0]##*/}"
+        case "${words[0]##*/}" in
+            node|nodejs|bun|deno|python|python[0-9]*|ruby|ruby[0-9]*)
+                for word in "${words[@]:1}"; do
+                    case "$word" in
+                        -*) continue ;;
+                    esac
+                    printf '%s\n' "${word##*/}"
+                    break
+                done
+                ;;
+        esac
+    done < <(ps -t "$tty_name" -o command= 2>/dev/null || true)
+}
+
+# Print the first configured process (in @agent-indicator-processes order)
+# running on the given tty; fails when none is.
+detect_agent_process() {
+    local names proc
+    local -a proc_array
+    names=$(tty_process_names "$1")
+    [ -n "$names" ] || return 1
+
+    IFS=',' read -ra proc_array <<< "$PROCESSES"
+    for proc in "${proc_array[@]}"; do
         proc=$(trim "$proc")
-        [ -z "$proc" ] && continue
-        # Check if process is running on this TTY
-        if ps -t "$(basename "$PANE_TTY")" -o command= 2>/dev/null | grep -qw "$proc"; then
-            icon_for_agent "$proc" "$ICONS"
-            exit 0
+        [ -n "$proc" ] || continue
+        if grep -qxF -- "$proc" <<< "$names"; then
+            printf '%s\n' "$proc"
+            return 0
         fi
     done
+    return 1
+}
+
+# Method 3: Process detection fallback in the rendered pane
+if [ -n "$PANE_TTY" ] && detected=$(detect_agent_process "$PANE_TTY"); then
+    icon_for_agent "$detected" "$ICONS"
+    exit 0
 fi
 
-# Method 4: Process detection in other panes of current window
-while IFS=' ' read -r other_pane other_tty other_active; do
-    [ "$other_active" = "1" ] && continue
+# Method 4: Process detection in other panes of the window
+while IFS=' ' read -r other_pane other_tty; do
+    [ "$other_pane" != "$PANE_ID" ] || continue
     [ -n "$other_tty" ] || continue
-    IFS=',' read -ra PROC_ARRAY <<< "$PROCESSES"
-    for proc in "${PROC_ARRAY[@]}"; do
-        proc=$(trim "$proc")
-        [ -z "$proc" ] && continue
-        if ps -t "$(basename "$other_tty")" -o command= 2>/dev/null | grep -qw "$proc"; then
-            icon_for_agent "$proc" "$ICONS"
-            exit 0
-        fi
-    done
-done < <(tmux list-panes -t "$WINDOW_ID" -F '#{pane_id} #{pane_tty} #{pane_active}')
+    if detected=$(detect_agent_process "$other_tty"); then
+        icon_for_agent "$detected" "$ICONS"
+        exit 0
+    fi
+done < <(tmux list-panes -t "$WINDOW_ID" -F '#{pane_id} #{pane_tty}')
 
 # No agent detected
 echo ""

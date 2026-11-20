@@ -1,5 +1,6 @@
 {
   lib,
+  python3,
   tmuxPlugins,
   version ? "unstable",
 }:
@@ -21,6 +22,17 @@ tmuxPlugins.mkTmuxPlugin {
       ../licenses
     ];
   };
+
+  # agent-limits.sh looks python3 up on PATH, which a NixOS profile may not
+  # have; pin it to the store interpreter. --replace-fail makes the build fail
+  # if the script stops matching, instead of silently shipping an unpinned one.
+  buildInputs = [ python3 ];
+  postInstall = ''
+    substituteInPlace "$target/scripts/agent-limits.sh" \
+      --replace-fail 'command -v python3' 'command -v ${python3.interpreter}' \
+      --replace-fail 'exec python3 ' 'exec ${python3.interpreter} '
+    patchShebangs --host "$target/scripts/agent-limits.py"
+  '';
 
   meta = {
     description = "tmux plugin showing AI agent state in pane borders, window titles and the status bar";

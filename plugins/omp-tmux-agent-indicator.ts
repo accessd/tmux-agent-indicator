@@ -26,8 +26,11 @@ export default function tmuxAgentIndicator(pi: ExtensionAPI) {
 	// Serialize calls without blocking omp's event dispatch.
 	let queue: Promise<unknown> = Promise.resolve();
 
-	const set = (state: State, { reset = false } = {}) => {
-		if (state === last) return;
+	// Returns the queue tail so callers that must finish before the process
+	// exits (session_shutdown) can await it. Event handlers must NOT return it:
+	// omp awaits handler results, which would block event dispatch.
+	const set = (state: State, { reset = false } = {}): Promise<unknown> => {
+		if (state === last) return queue;
 		last = state;
 		const states: State[] = reset ? ["off", state] : [state];
 		queue = queue.then(async () => {
@@ -36,6 +39,7 @@ export default function tmuxAgentIndicator(pi: ExtensionAPI) {
 				await pi.exec("bash", [script, "--agent", "omp", "--state", s]).catch(() => {});
 			}
 		});
+		return queue;
 	};
 
 	// Subagent sessions share this factory; only the session in the pane counts.
@@ -44,8 +48,12 @@ export default function tmuxAgentIndicator(pi: ExtensionAPI) {
 	pi.on("agent_start", (_e, ctx) => {
 		if (main(ctx)) set("running", { reset: true });
 	});
-	pi.on("agent_end", (_e, ctx) => {
-		if (main(ctx)) set("done");
+	pi.on("agent_end", (e, ctx) => {
+		// agent_end is not always final: auto-retry, compaction continuation and
+		// background-job delivery report willContinue (isTerminal === false on the
+		// session-level event). Absent fields mean terminal.
+		const { willContinue, isTerminal } = e as { willContinue?: boolean; isTerminal?: boolean };
+		if (main(ctx) && willContinue !== true && isTerminal !== false) set("done");
 	});
 	pi.on("tool_approval_requested", (_e, ctx) => {
 		if (main(ctx)) set("needs-input");
@@ -59,5 +67,8 @@ export default function tmuxAgentIndicator(pi: ExtensionAPI) {
 	pi.on("tool_execution_end", (e, ctx) => {
 		if (main(ctx) && e.toolName === "ask") set("running");
 	});
-	pi.on("session_shutdown", () => set("off"));
+	// Awaited by omp (2 s budget) so "off" lands before the process exits.
+	pi.on("session_shutdown", async () => {
+		await set("off");
+	});
 }

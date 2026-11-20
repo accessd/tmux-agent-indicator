@@ -20,5 +20,13 @@
       });
 
       homeModules.default = import ./nix/hm-module.nix { inherit version; };
+
+      checks = forAllSystems (system: {
+        package = self.packages.${system}.default;
+        hm-module = import ./nix/checks.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+          hmModule = self.homeModules.default;
+        };
+      });
     };
 }

@@ -4,8 +4,13 @@
 set -euo pipefail
 
 if [[ ! -t 0 ]]; then
-    echo "setup.sh requires an interactive terminal." >&2
-    exit 1
+    # Under `curl | bash` stdin is not a terminal; fall back to the controlling one.
+    if [[ -t 1 ]] && ( exec </dev/tty ) 2>/dev/null; then
+        exec </dev/tty
+    else
+        echo "setup.sh requires an interactive terminal." >&2
+        exit 1
+    fi
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -235,9 +240,9 @@ save_to_tmux_conf() {
         return
     fi
 
-    if grep -qF "$begin_marker" "$conf"; then
+    if grep -qxF "$begin_marker" "$conf"; then
         local in_block=false
-        local tmpfile
+        local line tmpfile
         tmpfile=$(mktemp)
         while IFS= read -r line || [ -n "$line" ]; do
             if [ "$line" = "$begin_marker" ]; then
@@ -253,7 +258,15 @@ save_to_tmux_conf() {
                 printf '%s\n' "$line" >> "$tmpfile"
             fi
         done < "$conf"
-        mv "$tmpfile" "$conf"
+        if [ "$in_block" = true ]; then
+            rm -f "$tmpfile"
+            echo "Found '$begin_marker' without '$end_marker' in $conf; refusing to rewrite it." >&2
+            echo "Add the missing end marker (or remove the begin marker) and run setup again." >&2
+            return 1
+        fi
+        # Write through the existing path (keeps symlinks, mode and ownership).
+        cat "$tmpfile" > "$conf"
+        rm -f "$tmpfile"
         echo "Updated color config in $conf."
     else
         printf '\n%s\n' "$new_block" >> "$conf"

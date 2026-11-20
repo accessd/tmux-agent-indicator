@@ -13,8 +13,8 @@ tmux_cmd new-session -d -s build -n main
 BUILD_PANE="$(tmux_cmd display-message -p -t build:main.0 '#{pane_id}')"
 
 attention() {
-    local out_file="/tmp/tmux-agent-indicator-${SOCK}-${RANDOM}.out"
-    register_tmp_file "$out_file"
+    local out_file
+    out_file="$(new_tmp_file)"
     tmux_cmd run-shell "\"$REPO_ROOT/scripts/session-attention.sh\" $* > \"$out_file\""
     cat "$out_file" 2>/dev/null || true
 }

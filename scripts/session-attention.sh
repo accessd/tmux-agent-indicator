@@ -50,47 +50,9 @@ if ! command -v tmux >/dev/null 2>&1 || ! tmux list-sessions >/dev/null 2>&1; th
     exit 0
 fi
 
-tmux_option_is_set() {
-    local option="$1"
-    local raw
-    raw=$(tmux show-option -gq "$option" 2>/dev/null || true)
-    [ -n "$raw" ]
-}
-
-tmux_get_option_or_default() {
-    local option="$1"
-    local default_value="$2"
-    local value
-    if tmux_option_is_set "$option"; then
-        value=$(tmux show-option -gqv "$option")
-        printf '%s\n' "$value"
-    else
-        printf '%s\n' "$default_value"
-    fi
-}
-
-default_state_title_bg() {
-    case "$1" in
-        needs-input) printf 'yellow\n' ;;
-        done) printf 'red\n' ;;
-        *) printf '\n' ;;
-    esac
-}
-
-default_state_title_fg() {
-    case "$1" in
-        needs-input) printf 'black\n' ;;
-        done) printf 'black\n' ;;
-        *) printf '\n' ;;
-    esac
-}
-
-state_rank() {
-    case "$1" in
-        needs-input) printf '2\n' ;;
-        *) printf '1\n' ;;
-    esac
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/state-lib.sh
+source "$SCRIPT_DIR/state-lib.sh"
 
 ATTENTION_STATES=$(tmux_get_option_or_default "@agent-indicator-session-dots-attention-states" "needs-input,done")
 
@@ -110,30 +72,40 @@ while IFS= read -r line; do
     [ "${seen_session##*=}" = "1" ] && seen_sessions["${seen_session%=*}"]=1
 done < <(tmux show-environment -g 2>/dev/null | grep '^TMUX_AGENT_SESSION_SEEN_' || true)
 
+# Session of every live pane (closed panes may still have stale state keys).
+declare -A pane_session
+while read -r pane_id dead session; do
+    [ -n "$pane_id" ] && [ "$dead" != "1" ] || continue
+    [ -n "${pane_session[$pane_id]:-}" ] || pane_session["$pane_id"]="$session"
+done < <(tmux list-panes -a -F '#{pane_id} #{pane_dead} #{session_name}' 2>/dev/null || true)
+
+agent_env_load
 declare -A session_state
-while IFS= read -r line; do
-    [ -z "$line" ] && continue
-    # Format: TMUX_AGENT_PANE_%xx_STATE=<state>
-    pane_id="${line#TMUX_AGENT_PANE_}"
-    pane_id="${pane_id%%_STATE=*}"
-    state="${line#*_STATE=}"
-    [ -n "${attention_state_map[$state]:-}" ] || continue
-    session=$(tmux display-message -p -t "$pane_id" '#{session_name}' 2>/dev/null || true)
+for key in "${!AGENT_ENV[@]}"; do
+    case "$key" in
+        TMUX_AGENT_PANE_*_STATE) ;;
+        *) continue ;;
+    esac
+    state="${AGENT_ENV[$key]}"
+    [ -n "$state" ] && [ -n "${attention_state_map[$state]:-}" ] || continue
+    pane_id=$(pane_from_key "$key")
+    [ -n "$pane_id" ] || continue
+    session="${pane_session[$pane_id]:-}"
     [ -n "$session" ] || continue
     [ "$session" != "$exclude" ] || continue
     [ -z "${seen_sessions[$session]:-}" ] || continue
     current="${session_state[$session]:-}"
-    if [ -z "$current" ] || [ "$(state_rank "$state")" -gt "$(state_rank "$current")" ]; then
+    if [ -z "$current" ] || state_more_urgent "$state" "$current"; then
         session_state["$session"]="$state"
     fi
-done < <(tmux show-environment -g 2>/dev/null | grep '^TMUX_AGENT_PANE_.*_STATE=' || true)
+done
 
 title_bg() {
-    tmux_get_option_or_default "@agent-indicator-$1-window-title-bg" "$(default_state_title_bg "$1")"
+    state_option "$1" window-title-bg
 }
 
 title_fg() {
-    tmux_get_option_or_default "@agent-indicator-$1-window-title-fg" "$(default_state_title_fg "$1")"
+    state_option "$1" window-title-fg
 }
 
 if [ -n "$color_mode" ]; then

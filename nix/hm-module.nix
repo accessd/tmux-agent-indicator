@@ -43,6 +43,20 @@ let
         --replace-fail ${lib.escapeShellArg "\${TMUX_AGENT_INDICATOR_DIR:-$HOME/.tmux/plugins/tmux-agent-indicator}"} ${pluginDir}
     '';
 
+  # jq definitions shared by the merge and strip-only passes. `ours` matches
+  # this plugin's hook commands for the agent; with $store_only set it matches
+  # only those pointing into the Nix store, so a TPM/install.sh setup that
+  # shares the settings file is left alone.
+  hookDefs = agent: ''
+    def ours: type == "object" and ((.command // "") | type == "string" and test("scripts/agent-state\\.sh .*--agent ${agent} --state") and (($store_only | not) or contains($store)));
+    def strip:
+      map(if type == "object" and (.hooks | type) == "array" then .hooks |= map(select(ours | not)) else . end)
+      | map(select(type != "object" or (.hooks | type) != "array" or (.hooks | length) > 0));
+    def stripped: if (.hooks | type) == "object" then .hooks |= (map_values(if type == "array" then strip else . end) | with_entries(select(.value != []))) else . end;
+  '';
+
+  jqArgs = storeOnly: "--arg store ${lib.escapeShellArg "${builtins.storeDir}/"} --argjson store_only ${lib.boolToString storeOnly}";
+
   # Claude Code and Codex rewrite their settings files themselves, so the hooks
   # are merged in on activation instead of linking a read-only store file. Hooks
   # from earlier generations (any agent-state.sh path) are dropped first.
@@ -53,12 +67,9 @@ let
     else
       run mkdir -p "$(dirname "$settings")"
       tmp=$(mktemp)
-      if { [ -s "$settings" ] && cat "$settings" || echo '{}'; } | ${lib.getExe pkgs.jq} --slurpfile tpl ${hookTemplate agent} '
-        def ours: type == "object" and ((.command // "") | type == "string" and test("scripts/agent-state\\.sh .*--agent ${agent} --state"));
-        def strip:
-          map(if type == "object" and (.hooks | type) == "array" then .hooks |= map(select(ours | not)) else . end)
-          | map(select(type != "object" or (.hooks | type) != "array" or (.hooks | length) > 0));
-        .hooks = ((.hooks // {}) | map_values(if type == "array" then strip else . end) | with_entries(select(.value != [])))
+      if { [ -s "$settings" ] && cat "$settings" || echo '{}'; } | ${lib.getExe pkgs.jq} ${jqArgs false} --slurpfile tpl ${hookTemplate agent} '
+        ${hookDefs agent}
+        stripped
         | reduce ($tpl[0].hooks | to_entries[]) as $e (.; .hooks[$e.key] += $e.value)
       ' > "$tmp"; then
         run cp "$tmp" "$settings"
@@ -66,6 +77,25 @@ let
       rm -f "$tmp"
     fi
   '';
+
+  # Integration (or module) disabled: drop hooks left behind by earlier
+  # generations, which point at store paths that GC will eventually delete.
+  # Never creates the file, skips symlinks, and only rewrites on a real change.
+  stripHooks = agent: settings: ''
+    settings=${settings}
+    if [ ! -L "$settings" ] && [ -s "$settings" ] && ${lib.getExe pkgs.gnugrep} -qF ${lib.escapeShellArg "${builtins.storeDir}/"} "$settings"; then
+      tmp=$(mktemp)
+      if ${lib.getExe pkgs.jq} ${jqArgs true} '
+        ${hookDefs agent}
+        stripped as $new | if $new == . then empty else $new end
+      ' "$settings" > "$tmp" && [ -s "$tmp" ]; then
+        run cp "$tmp" "$settings"
+      fi
+      rm -f "$tmp"
+    fi
+  '';
+
+  syncHooks = enable: if enable then mergeHooks else stripHooks;
 in
 {
   options.programs.tmux.agentIndicator = {
@@ -135,42 +165,46 @@ in
     };
   };
 
-  config = mkIf cfg.enable (mkMerge [
+  config = mkMerge [
+    # Declared even while the module or an integration is disabled: the next
+    # switch then strips the store-path hooks the previous generation merged,
+    # which would otherwise dangle after garbage collection. A no-op unless the
+    # settings file holds such hooks.
     {
-      programs.tmux.plugins = [
-        {
-          plugin = cfg.package;
-          extraConfig = concatStringsSep "\n" (
-            lib.filter (s: s != "") [
-              settingsConfig
-              cfg.extraConfig
-            ]
-          );
-        }
-      ];
+      home.activation.tmuxAgentIndicatorClaude = lib.hm.dag.entryAfter [ "writeBoundary" ] (
+        syncHooks (cfg.enable && cfg.integrations.claude.enable) "claude" ''"$HOME/.claude/settings.json"''
+      );
+      home.activation.tmuxAgentIndicatorCodex = lib.hm.dag.entryAfter [ "writeBoundary" ] (
+        syncHooks (cfg.enable && cfg.integrations.codex.enable) "codex" ''"$HOME/.codex/hooks.json"''
+      );
     }
 
-    (mkIf cfg.integrations.claude.enable {
-      home.activation.tmuxAgentIndicatorClaude = lib.hm.dag.entryAfter [ "writeBoundary" ] (
-        mergeHooks "claude" ''"$HOME/.claude/settings.json"''
-      );
-    })
+    (mkIf cfg.enable (mkMerge [
+      {
+        programs.tmux.plugins = [
+          {
+            plugin = cfg.package;
+            extraConfig = concatStringsSep "\n" (
+              lib.filter (s: s != "") [
+                settingsConfig
+                cfg.extraConfig
+              ]
+            );
+          }
+        ];
+      }
 
-    (mkIf cfg.integrations.codex.enable {
-      home.activation.tmuxAgentIndicatorCodex = lib.hm.dag.entryAfter [ "writeBoundary" ] (
-        mergeHooks "codex" ''"$HOME/.codex/hooks.json"''
-      );
-    })
+      (mkIf cfg.integrations.opencode.enable {
+        # A symlink, so the plugin resolves its scripts from the store package.
+        xdg.configFile."opencode/plugins/opencode-tmux-agent-indicator.js".source =
+          "${pluginDir}/plugins/opencode-tmux-agent-indicator.js";
+      })
 
-    (mkIf cfg.integrations.opencode.enable {
-      xdg.configFile."opencode/plugins/opencode-tmux-agent-indicator.js".source =
-        "${pluginDir}/plugins/opencode-tmux-agent-indicator.js";
-    })
-
-    # omp resolves the scripts through the symlink's target, so a link suffices.
-    (mkIf cfg.integrations.omp.enable {
-      home.file.".omp/agent/extensions/tmux-agent-indicator.ts".source =
-        "${pluginDir}/plugins/omp-tmux-agent-indicator.ts";
-    })
-  ]);
+      # omp resolves the scripts through the symlink's target, so a link suffices.
+      (mkIf cfg.integrations.omp.enable {
+        home.file.".omp/agent/extensions/tmux-agent-indicator.ts".source =
+          "${pluginDir}/plugins/omp-tmux-agent-indicator.ts";
+      })
+    ]))
+  ];
 }

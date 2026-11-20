@@ -3,9 +3,11 @@
 ## Project Structure & Module Organization
 This repository is a tmux plugin written in Bash.
 
-- `agent-indicator.tmux`: plugin entrypoint; injects `#{agent_indicator}` and registers focus/window hooks.
+- `agent-indicator.tmux`: plugin entrypoint; injects `#{agent_indicator}` and registers focus/window/prune hooks.
+- `scripts/state-lib.sh`: shared helpers sourced by the state scripts (option/env access, state defaults, window-style aggregation, dead-pane pruning).
 - `scripts/agent-state.sh`: state machine for `running`, `needs-input`, `done`, `off`; applies/restores pane, border, and window-title styles.
 - `scripts/pane-focus-in.sh`: clears deferred `done` styling when pane/window focus changes.
+- `scripts/prune-panes.sh`: drops state of closed panes/windows (pane-exited, pane-died, after-kill-pane, window-unlinked hooks).
 - `scripts/indicator.sh`: status segment renderer (icons + process/state detection).
 - `hooks/`: Claude and Codex hook templates.
 - `flake.nix`, `nix/`: Nix package (`nix/package.nix`) and Home Manager module (`nix/hm-module.nix`, `programs.tmux.agentIndicator`).
