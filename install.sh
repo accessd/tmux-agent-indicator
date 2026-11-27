@@ -68,6 +68,15 @@ Options:
   --uninstall-codex    Remove tmux-agent-indicator Codex hooks from ~/.codex/hooks.json
   --uninstall-opencode Remove tmux-agent-indicator OpenCode plugin from ~/.config/opencode/plugins/
   -h, --help           Show this help
+
+When any --uninstall-* option is given, only the requested removals run
+(nothing is copied or installed).
+
+Environment:
+  CLAUDE_CONFIG_DIR    Claude config dir (default: ~/.claude)
+  CODEX_CONFIG_DIR     Codex config dir override (default: $CODEX_HOME, then ~/.codex)
+  CODEX_HOME           Codex home dir (default: ~/.codex)
+  XDG_CONFIG_HOME      Base for the OpenCode config dir (default: ~/.config)
 EOF
 }
 
@@ -92,17 +101,14 @@ while [ "$#" -gt 0 ]; do
             ;;
         --uninstall-claude)
             UNINSTALL_CLAUDE=true
-            INSTALL_CLAUDE=false
             shift
             ;;
         --uninstall-codex)
             UNINSTALL_CODEX=true
-            INSTALL_CODEX=false
             shift
             ;;
         --uninstall-opencode)
             UNINSTALL_OPENCODE=true
-            INSTALL_OPENCODE=false
             shift
             ;;
         -h|--help)
@@ -117,60 +123,71 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+# Any --uninstall-* flag makes the run uninstall-only: nothing is copied and no
+# integration is installed.
+DO_COPY=true
+if [ "$UNINSTALL_CLAUDE" = true ] || [ "$UNINSTALL_CODEX" = true ] || [ "$UNINSTALL_OPENCODE" = true ]; then
+    DO_COPY=false
+    INSTALL_CLAUDE=false
+    INSTALL_CODEX=false
+    INSTALL_OPENCODE=false
+fi
+
+# Hook commands and the status line embed this path, so it must be absolute.
+if [ "$DO_COPY" = true ]; then
+    mkdir -p "$TARGET_DIR"
+    TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
+fi
+
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+CODEX_DIR="${CODEX_CONFIG_DIR:-${CODEX_HOME:-$HOME/.codex}}"
+OPENCODE_CFG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+
 # Auto-detect agents: skip integration if agent not found on system
-if [ "$INSTALL_CLAUDE" = true ] && [ "$UNINSTALL_CLAUDE" = false ]; then
-    CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-    if ! command -v claude >/dev/null 2>&1 && [ ! -d "$CLAUDE_DIR" ]; then
-        INSTALL_CLAUDE=false
-        echo "Claude not detected, skipping hooks setup"
-    fi
+if [ "$INSTALL_CLAUDE" = true ] && ! command -v claude >/dev/null 2>&1 && [ ! -d "$CLAUDE_DIR" ]; then
+    INSTALL_CLAUDE=false
+    echo "Claude not detected, skipping hooks setup"
 fi
 
-if [ "$INSTALL_CODEX" = true ] && [ "$UNINSTALL_CODEX" = false ]; then
-    CODEX_DIR="${CODEX_CONFIG_DIR:-$HOME/.codex}"
-    if ! command -v codex >/dev/null 2>&1 && [ ! -d "$CODEX_DIR" ]; then
-        INSTALL_CODEX=false
-        echo "Codex not detected, skipping hooks setup"
-    fi
+if [ "$INSTALL_CODEX" = true ] && ! command -v codex >/dev/null 2>&1 && [ ! -d "$CODEX_DIR" ]; then
+    INSTALL_CODEX=false
+    echo "Codex not detected, skipping hooks setup"
 fi
 
-if [ "$INSTALL_OPENCODE" = true ] && [ "$UNINSTALL_OPENCODE" = false ]; then
-    OPENCODE_CFG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
-    if ! command -v opencode >/dev/null 2>&1 && [ ! -d "$OPENCODE_CFG_DIR" ]; then
-        INSTALL_OPENCODE=false
-        echo "OpenCode not detected, skipping plugin setup"
-    fi
+if [ "$INSTALL_OPENCODE" = true ] && ! command -v opencode >/dev/null 2>&1 && [ ! -d "$OPENCODE_CFG_DIR" ]; then
+    INSTALL_OPENCODE=false
+    echo "OpenCode not detected, skipping plugin setup"
 fi
 
-mkdir -p "$TARGET_DIR/scripts" "$TARGET_DIR/hooks" "$TARGET_DIR/plugins" "$TARGET_DIR/licenses"
+if [ "$DO_COPY" = true ]; then
+    mkdir -p "$TARGET_DIR/scripts" "$TARGET_DIR/hooks" "$TARGET_DIR/plugins" "$TARGET_DIR/licenses"
 
-cp "$SCRIPT_DIR/agent-indicator.tmux" "$TARGET_DIR/"
-cp "$SCRIPT_DIR/README.md" "$TARGET_DIR/"
-cp "$SCRIPT_DIR/LICENSE" "$TARGET_DIR/"
-cp "$SCRIPT_DIR/licenses/"*.txt "$TARGET_DIR/licenses/"
-cp "$SCRIPT_DIR/scripts/"*.sh "$TARGET_DIR/scripts/"
-cp "$SCRIPT_DIR/scripts/"*.py "$TARGET_DIR/scripts/"
-cp "$SCRIPT_DIR/hooks/"*.json "$TARGET_DIR/hooks/"
-cp "$SCRIPT_DIR/plugins/"*.js "$TARGET_DIR/plugins/"
-cp "$SCRIPT_DIR/setup.sh" "$TARGET_DIR/"
+    cp "$SCRIPT_DIR/agent-indicator.tmux" "$TARGET_DIR/"
+    cp "$SCRIPT_DIR/README.md" "$TARGET_DIR/"
+    cp "$SCRIPT_DIR/LICENSE" "$TARGET_DIR/"
+    cp "$SCRIPT_DIR/setup.sh" "$TARGET_DIR/"
+    # Copy whole runtime directories so sourced helpers (e.g. scripts/lib/) and
+    # every plugin file are included.
+    for runtime_dir in scripts hooks plugins licenses; do
+        cp -R "$SCRIPT_DIR/$runtime_dir/." "$TARGET_DIR/$runtime_dir/"
+    done
+    find "$TARGET_DIR/scripts" -name __pycache__ -type d -prune -exec rm -rf {} +
 
-chmod +x "$TARGET_DIR/agent-indicator.tmux" "$TARGET_DIR/scripts/"*.sh "$TARGET_DIR/scripts/"*.py "$TARGET_DIR/setup.sh"
+    chmod +x "$TARGET_DIR/agent-indicator.tmux" "$TARGET_DIR/setup.sh"
+    find "$TARGET_DIR/scripts" -type f \( -name '*.sh' -o -name '*.py' \) -exec chmod +x {} +
+fi
 
 if [ "$INSTALL_CLAUDE" = true ] || [ "$UNINSTALL_CLAUDE" = true ]; then
-    CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
     CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
     CLAUDE_TEMPLATE="$TARGET_DIR/hooks/claude-hooks.json"
-    mkdir -p "$CLAUDE_DIR"
-    if [ ! -f "$CLAUDE_SETTINGS" ] && [ "$INSTALL_CLAUDE" = true ]; then
-        printf '{}\n' > "$CLAUDE_SETTINGS"
-    fi
 
     if [ "$INSTALL_CLAUDE" = true ]; then
+        mkdir -p "$CLAUDE_DIR"
         echo "Claude detected"
         echo "  Hooks/status line -> $CLAUDE_SETTINGS"
     fi
 
-    if [ -f "$CLAUDE_SETTINGS" ]; then
+    if [ "$INSTALL_CLAUDE" = true ] || [ -f "$CLAUDE_SETTINGS" ]; then
         if [ "$UNINSTALL_CLAUDE" = true ]; then
             CLAUDE_MODE="uninstall"
         else
@@ -179,10 +196,15 @@ if [ "$INSTALL_CLAUDE" = true ] || [ "$UNINSTALL_CLAUDE" = true ]; then
 
         python3 - "$CLAUDE_SETTINGS" "$CLAUDE_TEMPLATE" "$TARGET_DIR" "$CLAUDE_MODE" <<'PY'
 import base64
+import copy
 import json
+import os
 import pathlib
 import shlex
+import shutil
+import stat
 import sys
+import tempfile
 
 settings_path = pathlib.Path(sys.argv[1])
 template_path = pathlib.Path(sys.argv[2])
@@ -190,17 +212,59 @@ target_dir = sys.argv[3]
 mode = sys.argv[4]
 default_install_dir = "$HOME/.tmux/plugins/tmux-agent-indicator"
 
-try:
-    settings = json.loads(settings_path.read_text(encoding="utf-8"))
-except Exception:
-    settings = {}
 
-if not isinstance(settings, dict):
-    settings = {}
+def fail(message):
+    print(f"tmux-agent-indicator: {message}", file=sys.stderr)
+    sys.exit(1)
 
-hooks = settings.setdefault("hooks", {})
+
+def load_json_object(path):
+    """Return (parsed object, original text); abort without touching the file on bad input."""
+    if not path.exists():
+        return {}, None
+    try:
+        original = path.read_bytes().decode("utf-8-sig")
+        data = {} if not original.strip() else json.loads(original)
+    except (OSError, ValueError) as error:
+        fail(f"cannot parse {path}: {error}\n  Fix the file and re-run; it was left untouched.")
+    if not isinstance(data, dict):
+        fail(f"{path} does not contain a JSON object; it was left untouched.")
+    return data, original
+
+
+def write_atomic(path, text, original):
+    """Back up the previous content to <file>.bak, then replace via same-dir temp file + rename."""
+    if original == text:
+        return
+    real = os.path.realpath(path)
+    file_mode = None
+    if os.path.exists(real):
+        file_mode = stat.S_IMODE(os.stat(real).st_mode)
+        shutil.copy2(real, real + ".bak")
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(real), prefix=os.path.basename(real) + ".tmp.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if file_mode is not None:
+            os.chmod(tmp, file_mode)
+        os.replace(tmp, real)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+settings, original = load_json_object(settings_path)
+before = copy.deepcopy(settings)
+
+hooks = settings.get("hooks", {})
 if not isinstance(hooks, dict):
-    hooks = {}
+    fail(f'"hooks" in {settings_path} is not a JSON object; it was left untouched.')
+had_hooks = "hooks" in settings
 
 def unwrap_statusline(command):
     try:
@@ -270,16 +334,18 @@ for event in list(hooks.keys()):
     else:
         hooks.pop(event, None)
 
-template_text = template_path.read_text(encoding="utf-8").replace(default_install_dir, target_dir)
-template = json.loads(template_text)
-template_hooks = template.get("hooks", {}) if isinstance(template, dict) else {}
-
 if mode == "install":
+    template_text = template_path.read_text(encoding="utf-8").replace(
+        default_install_dir, json.dumps(target_dir)[1:-1]
+    )
+    template = json.loads(template_text)
+    template_hooks = template.get("hooks", {}) if isinstance(template, dict) else {}
     for event, entries in template_hooks.items():
         if isinstance(entries, list):
             hooks.setdefault(event, []).extend(entries)
 
-settings["hooks"] = hooks
+if hooks or had_hooks or mode == "install":
+    settings["hooks"] = hooks
 
 status_line = settings.get("statusLine")
 status_command = status_line.get("command", "") if isinstance(status_line, dict) else ""
@@ -305,28 +371,30 @@ elif mode == "uninstall" and wrapped:
     else:
         settings.pop("statusLine", None)
 
-settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+if original is not None and settings == before:
+    sys.exit(0)
+
+try:
+    write_atomic(settings_path, json.dumps(settings, indent=2) + "\n", original)
+except OSError as error:
+    fail(f"cannot write {settings_path}: {error}")
 PY
     fi
 fi
 
 if [ "$INSTALL_CODEX" = true ] || [ "$UNINSTALL_CODEX" = true ]; then
-    CODEX_DIR="${CODEX_CONFIG_DIR:-$HOME/.codex}"
     CODEX_HOOKS="$CODEX_DIR/hooks.json"
     CODEX_TEMPLATE="$TARGET_DIR/hooks/codex-hooks.json"
     CODEX_CONFIG="$CODEX_DIR/config.toml"
-    mkdir -p "$CODEX_DIR"
-    if [ ! -f "$CODEX_HOOKS" ] && [ "$INSTALL_CODEX" = true ]; then
-        printf '{"hooks":{}}\n' > "$CODEX_HOOKS"
-    fi
 
     if [ "$INSTALL_CODEX" = true ]; then
+        mkdir -p "$CODEX_DIR"
         echo "Codex detected"
-        echo "  Hooks -> $CODEX_HOOKS (UserPromptSubmit, PermissionRequest, Stop)"
+        echo "  Hooks -> $CODEX_HOOKS (UserPromptSubmit, PermissionRequest, PostToolUse, Stop)"
         echo "  Next: run /hooks in Codex and trust the tmux-agent-indicator hooks"
     fi
 
-    if [ -f "$CODEX_HOOKS" ]; then
+    if [ "$INSTALL_CODEX" = true ] || [ -f "$CODEX_HOOKS" ]; then
         if [ "$UNINSTALL_CODEX" = true ]; then
             CODEX_MODE="uninstall"
         else
@@ -334,9 +402,14 @@ if [ "$INSTALL_CODEX" = true ] || [ "$UNINSTALL_CODEX" = true ]; then
         fi
 
         python3 - "$CODEX_HOOKS" "$CODEX_TEMPLATE" "$TARGET_DIR" "$CODEX_MODE" <<'PY'
+import copy
 import json
+import os
 import pathlib
+import shutil
+import stat
 import sys
+import tempfile
 
 hooks_path = pathlib.Path(sys.argv[1])
 template_path = pathlib.Path(sys.argv[2])
@@ -344,17 +417,59 @@ target_dir = sys.argv[3]
 mode = sys.argv[4]
 default_install_dir = "$HOME/.tmux/plugins/tmux-agent-indicator"
 
-try:
-    settings = json.loads(hooks_path.read_text(encoding="utf-8"))
-except Exception:
-    settings = {}
 
-if not isinstance(settings, dict):
-    settings = {}
+def fail(message):
+    print(f"tmux-agent-indicator: {message}", file=sys.stderr)
+    sys.exit(1)
 
-hooks = settings.setdefault("hooks", {})
+
+def load_json_object(path):
+    """Return (parsed object, original text); abort without touching the file on bad input."""
+    if not path.exists():
+        return {}, None
+    try:
+        original = path.read_bytes().decode("utf-8-sig")
+        data = {} if not original.strip() else json.loads(original)
+    except (OSError, ValueError) as error:
+        fail(f"cannot parse {path}: {error}\n  Fix the file and re-run; it was left untouched.")
+    if not isinstance(data, dict):
+        fail(f"{path} does not contain a JSON object; it was left untouched.")
+    return data, original
+
+
+def write_atomic(path, text, original):
+    """Back up the previous content to <file>.bak, then replace via same-dir temp file + rename."""
+    if original == text:
+        return
+    real = os.path.realpath(path)
+    file_mode = None
+    if os.path.exists(real):
+        file_mode = stat.S_IMODE(os.stat(real).st_mode)
+        shutil.copy2(real, real + ".bak")
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(real), prefix=os.path.basename(real) + ".tmp.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if file_mode is not None:
+            os.chmod(tmp, file_mode)
+        os.replace(tmp, real)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+settings, original = load_json_object(hooks_path)
+before = copy.deepcopy(settings)
+
+hooks = settings.get("hooks", {})
 if not isinstance(hooks, dict):
-    hooks = {}
+    fail(f'"hooks" in {hooks_path} is not a JSON object; it was left untouched.')
+had_hooks = "hooks" in settings
 
 def is_plugin_command(command):
     return "scripts/agent-state.sh" in command and "--agent codex --state" in command
@@ -401,18 +516,26 @@ for event in list(hooks.keys()):
     else:
         hooks.pop(event, None)
 
-template_text = template_path.read_text(encoding="utf-8").replace(default_install_dir, target_dir)
-template = json.loads(template_text)
-template_hooks = template.get("hooks", {}) if isinstance(template, dict) else {}
-
 if mode == "install":
+    template_text = template_path.read_text(encoding="utf-8").replace(
+        default_install_dir, json.dumps(target_dir)[1:-1]
+    )
+    template = json.loads(template_text)
+    template_hooks = template.get("hooks", {}) if isinstance(template, dict) else {}
     for event, entries in template_hooks.items():
         if isinstance(entries, list):
             hooks.setdefault(event, []).extend(entries)
 
-settings["hooks"] = hooks
+if hooks or had_hooks or mode == "install":
+    settings["hooks"] = hooks
 
-hooks_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+if original is not None and settings == before:
+    sys.exit(0)
+
+try:
+    write_atomic(hooks_path, json.dumps(settings, indent=2) + "\n", original)
+except OSError as error:
+    fail(f"cannot write {hooks_path}: {error}")
 PY
     fi
 
@@ -424,20 +547,21 @@ import sys
 
 config_path = pathlib.Path(sys.argv[1])
 text = config_path.read_text(encoding="utf-8")
-text = re.sub(
+updated = re.sub(
     r'(?m)^[ \t]*notify[ \t]*=[ \t]*\[\s*"bash"\s*,\s*".*/adapters/codex-notify\.sh"\s*\][ \t]*\n?',
     "",
     text,
 )
-config_path.write_text(text, encoding="utf-8")
+if updated != text:
+    config_path.write_text(updated, encoding="utf-8")
 PY
     fi
 fi
 
 OPENCODE_PLUGIN_NAME="opencode-tmux-agent-indicator.js"
+OPENCODE_PLUGINS_DIR="$OPENCODE_CFG_DIR/plugins"
 
 if [ "$INSTALL_OPENCODE" = true ]; then
-    OPENCODE_PLUGINS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins"
     echo "OpenCode detected"
     echo "  Plugin -> $OPENCODE_PLUGINS_DIR/$OPENCODE_PLUGIN_NAME"
     mkdir -p "$OPENCODE_PLUGINS_DIR"
@@ -445,11 +569,11 @@ if [ "$INSTALL_OPENCODE" = true ]; then
 fi
 
 if [ "$UNINSTALL_OPENCODE" = true ]; then
-    OPENCODE_PLUGINS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins"
     rm -f "$OPENCODE_PLUGINS_DIR/$OPENCODE_PLUGIN_NAME"
 fi
 
-cat <<EOF
+if [ "$DO_COPY" = true ]; then
+    cat <<EOF
 Installed/updated tmux-agent-indicator in:
   $TARGET_DIR
 
@@ -468,28 +592,33 @@ If using minimal-tmux-status:
 Reload tmux:
   tmux source-file ~/.tmux.conf
 EOF
+fi
 
 if [ "$UNINSTALL_CLAUDE" = true ]; then
-    echo "Removed tmux-agent-indicator Claude hooks/status-line wrapper from: ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+    echo "Removed tmux-agent-indicator Claude hooks/status-line wrapper from: $CLAUDE_DIR/settings.json"
 fi
 
 if [ "$UNINSTALL_CODEX" = true ]; then
-    echo "Removed tmux-agent-indicator Codex hooks from: ${CODEX_CONFIG_DIR:-$HOME/.codex}/hooks.json"
+    echo "Removed tmux-agent-indicator Codex hooks from: $CODEX_DIR/hooks.json"
 fi
 
 if [ "$UNINSTALL_OPENCODE" = true ]; then
-    echo "Removed tmux-agent-indicator OpenCode plugin from: ${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins/"
+    echo "Removed tmux-agent-indicator OpenCode plugin from: $OPENCODE_CFG_DIR/plugins/"
 fi
 
-if [[ -t 0 ]]; then
-    printf "\nConfigure colors now? [Y/n]: "
-    read -r setup_reply
-    case "${setup_reply:-Y}" in
-        [nN]*) ;;
-        *) bash "$TARGET_DIR/setup.sh" ;;
-    esac
-else
-    echo ""
-    echo "To configure colors interactively:"
-    echo "  bash $TARGET_DIR/setup.sh"
+if [ "$DO_COPY" = true ]; then
+    # Under `curl | bash` stdin is the script, so prompt on the controlling
+    # terminal instead. Only do so when stdout is also a terminal.
+    if [ -t 1 ] && ( exec </dev/tty ) 2>/dev/null; then
+        printf "\nConfigure colors now? [Y/n]: "
+        read -r setup_reply </dev/tty || setup_reply="n"
+        case "${setup_reply:-Y}" in
+            [nN]*) ;;
+            *) bash "$TARGET_DIR/setup.sh" </dev/tty ;;
+        esac
+    else
+        echo ""
+        echo "To configure colors interactively:"
+        echo "  bash $TARGET_DIR/setup.sh"
+    fi
 fi

@@ -1,0 +1,75 @@
+// tmux-agent-indicator extension for oh-my-pi (omp).
+// Install to ~/.omp/agent/extensions/ (copy or symlink).
+// Tracks session state and calls agent-state.sh to update tmux pane visuals.
+import { existsSync, realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+
+type State = "running" | "needs-input" | "done" | "off";
+
+export default function tmuxAgentIndicator(pi: ExtensionAPI) {
+	// Outside tmux only a host reached through agent-ssh.sh can show states.
+	if (!process.env.TMUX && !process.env.LC_TMUX_AGENT_SOCKET) return;
+
+	// The checkout this file lives in (when symlinked from it), then the plugin
+	// tmux loaded, then the TPM default.
+	const scripts = [
+		dirname(dirname(realpathSync(fileURLToPath(import.meta.url)))),
+		process.env.TMUX_AGENT_INDICATOR_DIR,
+		`${process.env.HOME}/.tmux/plugins/tmux-agent-indicator`,
+	]
+		.filter((dir): dir is string => Boolean(dir))
+		.map((dir) => join(dir, "scripts", "agent-state.sh"));
+	const script = scripts.find((s) => existsSync(s)) ?? scripts[scripts.length - 1];
+
+	let last: State = "off";
+	// Serialize calls without blocking omp's event dispatch.
+	let queue: Promise<unknown> = Promise.resolve();
+
+	// Returns the queue tail so callers that must finish before the process
+	// exits (session_shutdown) can await it. Event handlers must NOT return it:
+	// omp awaits handler results, which would block event dispatch.
+	const set = (state: State, { reset = false } = {}): Promise<unknown> => {
+		if (state === last) return queue;
+		last = state;
+		const states: State[] = reset ? ["off", state] : [state];
+		queue = queue.then(async () => {
+			for (const s of states) {
+				// Non-fatal: tmux may not be available.
+				await pi.exec("bash", [script, "--agent", "omp", "--state", s]).catch(() => {});
+			}
+		});
+		return queue;
+	};
+
+	// Subagent sessions share this factory; only the session in the pane counts.
+	const main = (ctx: { agent?: { kind?: string } }) => ctx.agent?.kind !== "sub";
+
+	pi.on("agent_start", (_e, ctx) => {
+		if (main(ctx)) set("running", { reset: true });
+	});
+	pi.on("agent_end", (e, ctx) => {
+		// agent_end is not always final: auto-retry, compaction continuation and
+		// background-job delivery report willContinue (isTerminal === false on the
+		// session-level event). Absent fields mean terminal.
+		const { willContinue, isTerminal } = e as { willContinue?: boolean; isTerminal?: boolean };
+		if (main(ctx) && willContinue !== true && isTerminal !== false) set("done");
+	});
+	pi.on("tool_approval_requested", (_e, ctx) => {
+		if (main(ctx)) set("needs-input");
+	});
+	pi.on("tool_approval_resolved", (_e, ctx) => {
+		if (main(ctx)) set("running");
+	});
+	pi.on("tool_execution_start", (e, ctx) => {
+		if (main(ctx) && e.toolName === "ask") set("needs-input");
+	});
+	pi.on("tool_execution_end", (e, ctx) => {
+		if (main(ctx) && e.toolName === "ask") set("running");
+	});
+	// Awaited by omp (2 s budget) so "off" lands before the process exits.
+	pi.on("session_shutdown", async () => {
+		await set("off");
+	});
+}

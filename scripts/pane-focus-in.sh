@@ -7,14 +7,9 @@ if ! command -v tmux >/dev/null 2>&1; then
     exit 0
 fi
 
-tmux_get_env() {
-    local key="$1"
-    tmux show-environment -g "$key" 2>/dev/null | sed 's/^[^=]*=//' || true
-}
-
-tmux_unset_env() {
-    tmux set-environment -gu "$1" 2>/dev/null || true
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/state-lib.sh
+source "$SCRIPT_DIR/state-lib.sh"
 
 target_is_focused() {
     local pane_id="$1"
@@ -26,34 +21,10 @@ target_is_focused() {
     [ "$pane_active" = "1" ] && [ "$window_active" = "1" ]
 }
 
-restore_window_option() {
-    local window_id="$1"
-    local option="$2"
-    local env_key="$3"
-    local marker="__UNSET__"
-    local saved
-
-    saved=$(tmux_get_env "$env_key")
-    if [ -z "$saved" ]; then
-        return
-    fi
-    if [ "$saved" = "$marker" ]; then
-        tmux set-window-option -qt "$window_id" -u "$option" || true
-    else
-        tmux set-window-option -qt "$window_id" "$option" "$saved"
-    fi
-    tmux_unset_env "$env_key"
-}
-
-restore_window_title_style() {
-    local window_id="$1"
-    local window_done_key="TMUX_AGENT_WINDOW_${window_id}_DONE"
-    local window_status_key="TMUX_AGENT_WINDOW_${window_id}_ORIG_STATUS_STYLE"
-    local window_status_current_key="TMUX_AGENT_WINDOW_${window_id}_ORIG_STATUS_CURRENT_STYLE"
-
-    restore_window_option "$window_id" "window-status-style" "$window_status_key"
-    restore_window_option "$window_id" "window-status-current-style" "$window_status_current_key"
-    tmux_unset_env "$window_done_key"
+# Forget that a pane finished: its state, agent and window contributions go,
+# but a deferred background reset stays until the pane itself is focused.
+clear_done_state() {
+    clear_pane_keys "$1" STATE AGENT WINDOW DONE DONE_WINDOW TITLE BORDER
 }
 
 pane_id="${1:-}"
@@ -70,66 +41,73 @@ if ! target_is_focused "$pane_id" "$window_id"; then
     exit 0
 fi
 
-state_key="TMUX_AGENT_PANE_${pane_id}_STATE"
-agent_key="TMUX_AGENT_PANE_${pane_id}_AGENT"
-done_key="TMUX_AGENT_PANE_${pane_id}_DONE"
-done_window_key="TMUX_AGENT_PANE_${pane_id}_DONE_WINDOW"
-pending_reset_key="TMUX_AGENT_PANE_${pane_id}_PENDING_RESET"
+agent_env_load
 
-window_done_key="TMUX_AGENT_WINDOW_${window_id}_DONE"
-window_border_key="TMUX_AGENT_WINDOW_${window_id}_ORIG_ACTIVE_BORDER_STYLE"
+pane_prefix="TMUX_AGENT_PANE_${pane_id}"
+state="${AGENT_ENV[${pane_prefix}_STATE]:-}"
+done_marker="${AGENT_ENV[${pane_prefix}_DONE]:-}"
+done_window="${AGENT_ENV[${pane_prefix}_DONE_WINDOW]:-$window_id}"
+changed=""
 
-pending_reset=$(tmux_get_env "$pending_reset_key")
-if [ "$pending_reset" = "1" ]; then
-    tmux set-option -p -t "$pane_id" window-style "bg=default"
-    restore_window_option "$window_id" "pane-active-border-style" "$window_border_key"
-    tmux_unset_env "$pending_reset_key"
+if [ "${AGENT_ENV[${pane_prefix}_PENDING_RESET]:-}" = "1" ]; then
+    reset_pane_style "$pane_id"
+    clear_pane_keys "$pane_id" BORDER PENDING_RESET
+    changed=1
 fi
 
-window_done=$(tmux_get_env "$window_done_key")
-state=$(tmux_get_env "$state_key")
-done_marker=$(tmux_get_env "$done_key")
-done_window=$(tmux_get_env "$done_window_key")
-if [ -z "$done_window" ]; then
-    done_window="$window_id"
-fi
-done_window_done_key="TMUX_AGENT_WINDOW_${done_window}_DONE"
-done_window_border_key="TMUX_AGENT_WINDOW_${done_window}_ORIG_ACTIVE_BORDER_STYLE"
-
-# Needs-input visuals are cleared when focus returns to the source pane/window.
+# Needs-input visuals are cleared when focus returns to the source pane; the
+# state itself stays until the agent reports again.
 if [ "$state" = "needs-input" ]; then
-    restore_window_title_style "$window_id"
-    tmux set-option -p -t "$pane_id" window-style "bg=default"
-    restore_window_option "$window_id" "pane-active-border-style" "$window_border_key"
+    reset_pane_style "$pane_id"
+    clear_pane_keys "$pane_id" TITLE BORDER
+    changed=1
 fi
 
-if [ "$window_done" = "1" ] || [ "$state" = "done" ] || [ "$done_marker" = "1" ]; then
-    restore_window_title_style "$done_window"
-    restore_window_option "$done_window" "pane-active-border-style" "$done_window_border_key"
-    tmux_unset_env "$done_window_done_key"
-    tmux_unset_env "$done_key"
-    tmux_unset_env "$done_window_key"
-    tmux_unset_env "$state_key"
-    tmux_unset_env "$agent_key"
+# Done panes are acknowledged when focused, and every done pane of a window is
+# acknowledged once the user looks at a window whose title shows done.
+# Running and needs-input panes are never touched here.
+window_shows_done=""
+declare -A done_panes=()
+for key in "${!AGENT_ENV[@]}"; do
+    case "$key" in
+        TMUX_AGENT_PANE_*_DONE_WINDOW) ;;
+        *) continue ;;
+    esac
+    [ "${AGENT_ENV[$key]}" = "$window_id" ] || continue
+    other=$(pane_from_key "$key")
+    [ -n "$other" ] || continue
+    case "${AGENT_ENV[TMUX_AGENT_PANE_${other}_STATE]:-}" in
+        done|"") ;;
+        *) continue ;;
+    esac
+    done_panes["$other"]=1
+    if [ "${AGENT_ENV[TMUX_AGENT_PANE_${other}_TITLE]:-}" = "done" ]; then
+        window_shows_done=1
+    fi
+done
 
-    # Clear stale done state markers for any pane in the done window.
-    while IFS= read -r line; do
-        [ -z "$line" ] && continue
-        pane_prefix="${line%%_DONE_WINDOW=*}"
-        tmux_unset_env "${pane_prefix}_DONE"
-        tmux_unset_env "${pane_prefix}_DONE_WINDOW"
-        tmux_unset_env "${pane_prefix}_STATE"
-        tmux_unset_env "${pane_prefix}_AGENT"
-    done < <(tmux show-environment -g | rg "^TMUX_AGENT_PANE_.*_DONE_WINDOW=${done_window}$" || true)
+if [ "$state" = "done" ] || [ "$done_marker" = "1" ] || [ -n "$window_shows_done" ]; then
+    if [ "$state" = "done" ] || [ "$done_marker" = "1" ]; then
+        clear_done_state "$pane_id"
+    fi
+    if [ -n "$window_shows_done" ]; then
+        live_panes_load
+        for other in "${!done_panes[@]}"; do
+            if pane_is_live "$other"; then
+                clear_done_state "$other"
+            else
+                clear_pane_keys "$other"
+            fi
+        done
+    fi
+    stop_animation_if_idle
+    changed=1
+fi
 
-    # Stop animation if no panes are still running.
-    if ! tmux show-environment -g 2>/dev/null | grep -q '_STATE=running'; then
-        anim_pid=$(tmux_get_env "TMUX_AGENT_ANIMATION_PID")
-        if [ -n "$anim_pid" ] && kill -0 "$anim_pid" 2>/dev/null; then
-            kill "$anim_pid" 2>/dev/null || true
-        fi
-        tmux_unset_env "TMUX_AGENT_ANIMATION_PID"
-        tmux_unset_env "TMUX_AGENT_ANIMATION_FRAME"
+if [ -n "$changed" ]; then
+    window_refresh_styles "$window_id"
+    if [ "$done_window" != "$window_id" ]; then
+        window_refresh_styles "$done_window"
     fi
 fi
 

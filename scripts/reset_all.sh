@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Reset all tmux panes, borders, and window title styles to defaults.
-# Cleans up every TMUX_AGENT_* env var and stops animation.
+# Cleans up every TMUX_AGENT_* env var (except TMUX_AGENT_INDICATOR_DIR) and
+# stops animation.
 
 set -euo pipefail
 
@@ -63,10 +64,12 @@ while IFS= read -r window_id; do
     tmux_unset_env "TMUX_AGENT_WINDOW_${window_id}_DONE"
 done < <(tmux list-windows -a -F '#{window_id}')
 
-# Remove all TMUX_AGENT_* env vars
+# Remove all TMUX_AGENT_* env vars except TMUX_AGENT_INDICATOR_DIR, which hook
+# templates and plugin scripts use to locate the plugin.
 while IFS= read -r line; do
     [ -z "$line" ] && continue
     var_name="${line%%=*}"
+    [ "$var_name" = "TMUX_AGENT_INDICATOR_DIR" ] && continue
     tmux_unset_env "$var_name"
 done < <(tmux show-environment -g 2>/dev/null | grep '^TMUX_AGENT_' || true)
 

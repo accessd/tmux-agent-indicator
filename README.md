@@ -18,7 +18,7 @@ When the agent finishes, the window title background/foreground changes and the 
 
 The plugin tracks three states per pane: `running`, `needs-input`, and `done`.
 
-State transitions are driven by hooks. Claude Code and Codex fire hooks on prompt submit, permission request, and stop. OpenCode uses its plugin system. Any other agent can call `agent-state.sh` directly from a wrapper script or hook.
+State transitions are driven by hooks. Claude Code and Codex fire hooks on prompt submit, permission request, tool completion (back to `running` after an approved permission request), and stop. OpenCode uses its plugin system, and omp an extension. Any other agent can call `agent-state.sh` directly from a wrapper script or hook.
 
 Each state can change:
 - Pane border color
@@ -28,17 +28,20 @@ Each state can change:
 
 States reset when you focus the pane/window, or on the next transition.
 
+Window title and active-border styles are shared by every pane of a window. With several agents in one window they show the most urgent state (`needs-input` > `done` > `running`). Your own window styles come back once no agent pane needs them. When a pane closes, its state is dropped and its window styling is restored.
+
 ## Features
 
 - Per-agent status icons in the status bar
 - Knight Rider animation during `running` state
 - Deferred pane reset: keep pane colors until focus, not when the hook fires
 - Process detection fallback for agents that don't fire hooks
+- Agents on remote hosts over SSH, shown in the pane you connected from
 - Tmux display-message notifications on state transitions
 
 ## Requirements
 
-tmux 3.1+, bash 4+, Python 3
+tmux 3.1+ (`@agent-indicator-notification-duration` needs tmux 3.2+; older versions fall back to `display-time`), bash 4+, Python 3
 
 ## Installation
 
@@ -48,26 +51,30 @@ tmux 3.1+, bash 4+, Python 3
 curl -fsSL https://raw.githubusercontent.com/accessd/tmux-agent-indicator/main/install.sh | bash
 ```
 
-The installer will offer to run the interactive color setup wizard. You can also run it later:
+The installer will offer to run the interactive color setup wizard (it reads from your terminal, so this also works under `curl | bash`). You can also run it later:
 
 ```bash
 bash ~/.tmux/plugins/tmux-agent-indicator/setup.sh
 ```
 
 This installs files to `~/.tmux/plugins/tmux-agent-indicator` and updates:
-- `~/.claude/settings.json` hooks for Claude (`UserPromptSubmit`, `PermissionRequest`, `Stop`)
-- `~/.codex/hooks.json` hooks for Codex (`UserPromptSubmit`, `PermissionRequest`, `Stop`)
+- `~/.claude/settings.json` hooks for Claude (`UserPromptSubmit`, `PermissionRequest`, `PostToolUse`, `PostToolUseFailure`, `Stop`); honors `CLAUDE_CONFIG_DIR`
+- `~/.codex/hooks.json` hooks for Codex (`UserPromptSubmit`, `PermissionRequest`, `PostToolUse`, `Stop`); honors `CODEX_HOME` (or `CODEX_CONFIG_DIR`)
 - `~/.config/opencode/plugins/` plugin for OpenCode
+
+The installer refuses to touch a settings/hooks file that is not valid JSON (it exits with an error and leaves the file as is). Before rewriting a file it saves the previous content to `<file>.bak`.
 
 After installing Codex hooks, run `/hooks` in Codex and trust the tmux-agent-indicator hook definitions before they can run.
 
-Integration uninstall options:
+Integration uninstall options (only the requested removals run; nothing is copied or installed):
 
 ```bash
 ./install.sh --uninstall-claude
 ./install.sh --uninstall-codex
 ./install.sh --uninstall-opencode
 ```
+
+Uninstalling only removes the plugin's hooks (and unwraps the Claude status line); all other settings are preserved.
 
 ### TPM
 
@@ -82,6 +89,44 @@ Reload tmux:
 ```bash
 tmux source-file ~/.tmux.conf
 ```
+
+### Nix / Home Manager
+
+The flake provides the plugin as `packages.<system>.default` and a Home Manager module as `homeModules.default`:
+
+```nix
+# flake.nix
+inputs.tmux-agent-indicator = {
+  url = "github:accessd/tmux-agent-indicator";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+
+# home-manager modules
+imports = [ inputs.tmux-agent-indicator.homeModules.default ];
+
+programs.tmux.agentIndicator = {
+  enable = true;
+  # @agent-indicator-* options without the prefix; booleans become on/off
+  settings = {
+    icons = "claude=🤖,codex=🧠,default=🤖";
+    notification-enabled = false;
+  };
+  # Emitted just before the plugin loads, so #{agent_indicator} is expanded
+  extraConfig = ''
+    set -g status-right "#{agent_indicator} | %H:%M"
+  '';
+  integrations = {
+    claude.enable = true; # merges hooks into ~/.claude/settings.json on activation
+    codex.enable = true; # merges hooks into ~/.codex/hooks.json; trust them with /hooks
+    opencode.enable = true; # links the plugin into ~/.config/opencode/plugins
+    omp.enable = true; # links the extension into ~/.omp/agent/extensions
+  };
+};
+```
+
+Hooks point at the store copy of the plugin, and hooks from older generations are replaced on each switch. `programs.tmux.agentIndicator.dir` is the plugin directory, for calling its scripts (for example `session-attention.sh`) from other configuration. The module does not wrap Claude's status line, so `#{agent_limits}` uses `~/.claude.json` for Claude. The package bundles its own `python3` for `#{agent_limits}`, so no global Python is needed.
+
+Turning off `claude.enable` or `codex.enable` (or the whole module while it is still imported) removes the store-path hooks the module merged earlier on the next switch, so they don't dangle after garbage collection. Only hooks pointing into the Nix store are removed; hooks from a TPM/`install.sh` setup, your own hooks, and unrelated keys are kept, and the file is never created. If you drop the module import entirely, nothing runs on activation: set `enable = false` for one switch first, or delete the hooks by hand.
 
 ## Status Bar Integration
 
@@ -168,6 +213,24 @@ set -g @agent-indicator-session-dots-attention-states 'needs-input,done'
 
 The current session always shows as the active dot, even if it also has agents needing attention.
 
+### Session attention
+
+`scripts/session-attention.sh` reports the same attention set for other tools (session pickers, custom status segments). A session counts while one of its panes is in an `@agent-indicator-session-dots-attention-states` state and it hasn't been marked seen; `needs-input` outranks `done`.
+
+```sh
+# One line per session: <session>\t<state>\t<window-title-bg>\t<window-title-fg>
+scripts/session-attention.sh --exclude "$(tmux display-message -p '#S')"
+
+# Window-title background of the most urgent session, or the fallback
+scripts/session-attention.sh --exclude "$current" --color colour4
+```
+
+The colours are the window-title colours that state applies (`@agent-indicator-<state>-window-title-bg/fg`), so a status segment can match them:
+
+```tmux
+set -g status-left "#[fg=#(/path/to/scripts/session-attention.sh --exclude '#S' --color colour4)]● #[default]#S "
+```
+
 ## Configuration
 
 Quick start with the most useful options:
@@ -225,13 +288,20 @@ set -g @agent-indicator-done-window-title-fg 'black'
 # Per-agent icons
 set -g @agent-indicator-icons 'claude=🤖,codex=🧠,opencode=💻,default=🤖'
 
-# Process fallback detection
+# Per-state icons for hook-reported states, e.g. 'running=⚡,needs-input=❓,done=✅'
+# (override per-agent icons; states without an entry fall back to them)
+set -g @agent-indicator-state-icons ''
+
+# Process fallback detection: a pane counts as running an agent when a process
+# on its tty has one of these names as executable (argv[0] basename, or the
+# script basename for `node`/`bun`/`deno`/`python`/`ruby` launchers).
+# Names appearing only as arguments (`vim ~/.claude/settings.json`) do not match.
 set -g @agent-indicator-processes 'claude,codex,aider,cursor,opencode'
 
 # Keep pane colors until pane focus-in after done
 set -g @agent-indicator-reset-on-focus 'on'
 
-# Running animation in status indicator
+# Running animation in status indicator (speed: milliseconds per frame)
 set -g @agent-indicator-animation-enabled 'off'
 set -g @agent-indicator-animation-speed '300'
 
@@ -260,7 +330,7 @@ set -g @agent-indicator-needs-input-bg 'colour94'
 set -g @agent-indicator-done-bg 'green'
 ```
 
-Empty option values are treated as "do not apply this property" (for toggles, empty behaves as disabled). Example:
+Empty option values are treated as "do not apply this property" (for toggles, empty behaves as disabled). `default` resets the property (pane background to the terminal default, border to the window's original style). A disabled channel (`@agent-indicator-background-enabled` / `-border-enabled` set to `off`) resets it for every state. Example:
 
 ```tmux
 set -g @agent-indicator-done-bg ''
@@ -343,13 +413,13 @@ set -g @agent-indicator-notification-states 'done'
 # Custom format
 set -g @agent-indicator-notification-format '#{agent_name} is #{agent_state} in #{session_name}'
 
-# Duration in milliseconds (0 = use tmux default display-time)
+# Duration in milliseconds (0 = use tmux default display-time; needs tmux 3.2+)
 set -g @agent-indicator-notification-duration '3000'
 ```
 
 Available format placeholders: `#{agent_name}`, `#{agent_state}`, `#{session_name}`, `#{window_name}`, `#{window_index}`.
 
-You can also run an external command on each notification. The command receives environment variables `AGENT_NAME`, `AGENT_STATE`, `AGENT_SESSION`, and `AGENT_WINDOW`:
+You can also run an external command on each notification. It runs in the background, detached from the agent hook's input and output. The command receives environment variables `AGENT_NAME`, `AGENT_STATE`, `AGENT_SESSION`, and `AGENT_WINDOW`:
 
 ```tmux
 # Log notifications to a file
@@ -370,7 +440,32 @@ To integrate any agent that does not have built-in hook support, call `agent-sta
 ~/.tmux/plugins/tmux-agent-indicator/scripts/agent-state.sh --agent claude --state off
 ```
 
-`--state off` always resets pane background and border immediately.
+`--state off` always resets pane background and border immediately. `--state running` also clears leftover `done`/`needs-input` styling of its pane, so you don't need to send `off` before it. Repeated `running` reports for a pane that is already running return right away, so you can send them after every tool call.
+
+Agents on another machine reach the pane through [Agents over SSH](#agents-over-ssh).
+
+## Agents over SSH
+
+Agents running on another machine can drive the pane you ssh from. Connect with `scripts/agent-ssh.sh` instead of `ssh`; it takes the same arguments:
+
+```bash
+alias ssh="$HOME/.tmux/plugins/tmux-agent-indicator/scripts/agent-ssh.sh"
+```
+
+With the Home Manager module the path is `${config.programs.tmux.agentIndicator.dir}/scripts/agent-ssh.sh`.
+
+Install the plugin on the remote host too: `install.sh` there sets up the agent hooks (tmux is not needed on that host). The hooks call `agent-state.sh`, which sends each state back over the SSH connection, so the local pane gets the same border, window title, status icon and notifications as a local agent. When the connection ends, the pane's agent state is cleared. Outside tmux the wrapper is plain `ssh`.
+
+How it works: `agent-ssh.sh` starts a relay (`scripts/agent-relay.py`, Python 3) on a private local socket, forwards a random socket in the remote `/tmp` to it (`ssh -R`, the remote socket is mode 0600) and passes that path in `LC_TMUX_AGENT_SOCKET`. The relay applies only well-formed `<agent> <state>` lines, and only to the pane the connection runs in.
+
+Requirements and caveats:
+
+- The remote sshd must accept `LC_TMUX_AGENT_SOCKET`. Debian and Ubuntu ship `AcceptEnv LANG LC_*`; elsewhere add `AcceptEnv LC_TMUX_AGENT_SOCKET` to `sshd_config`.
+- Unix socket forwarding must be allowed (`AllowStreamLocalForwarding`, on by default). If it is not, ssh prints `remote port forwarding failed` and the session works without agent states.
+- The remote host sends states with `socat`, `python3` or `nc -U`, whichever is found first.
+- With `ControlMaster`, a multiplexed session only receives the environment variables the master connection's `SendEnv` allows. Add `SendEnv LC_TMUX_AGENT_SOCKET` to the host in `~/.ssh/config` unless `/etc/ssh/ssh_config` already sends `LC_*` (Debian and Ubuntu do).
+- tmux on the remote host: panes inherit `LC_TMUX_AGENT_SOCKET` from the connection that started the tmux server. Add `set -ga update-environment LC_TMUX_AGENT_SOCKET` to the remote `~/.tmux.conf` so that, after you reattach from a new connection, existing panes report through it. Every agent in that remote session reports to the one local pane; the latest state wins. If the remote tmux loads the plugin too, it shows the states as well.
+- sshd does not delete forwarded sockets, so each connection leaves an unused socket file in the remote `/tmp` until it is cleaned.
 
 ## Hook Templates
 
@@ -383,6 +478,7 @@ The installer uses these templates as the source for Claude and Codex hook confi
 They map:
 - `UserPromptSubmit` -> `running`
 - `PermissionRequest` -> `needs-input`
+- `PostToolUse` (and `PostToolUseFailure` for Claude) -> `running`, so an approved permission request goes back to running
 - `Stop` -> `done`
 
 Codex hooks must be reviewed and trusted with `/hooks` before they can run.
@@ -400,6 +496,26 @@ To install manually without the installer, copy the plugin file:
 mkdir -p ~/.config/opencode/plugins
 cp plugins/opencode-tmux-agent-indicator.js ~/.config/opencode/plugins/
 ```
+
+Only the root session drives the pane: events from subagent (task tool) sessions are ignored. A plugin file that is symlinked from a checkout or Nix store path (its real location has `../scripts/agent-state.sh`) uses those scripts; a copied file falls back to `$TMUX_AGENT_INDICATOR_DIR`, then `~/.tmux/plugins/tmux-agent-indicator`.
+
+## omp Extension
+
+`plugins/omp-tmux-agent-indicator.ts` drives the indicator from [oh-my-pi](https://github.com/can1357/oh-my-pi) lifecycle events, ignoring subagent sessions:
+- `agent_start` -> `running`
+- `tool_approval_requested`, `ask` tool start -> `needs-input`
+- `tool_approval_resolved`, `ask` tool end -> `running`
+- `agent_end` -> `done`, only when the end is terminal (an auto-retry, compaction continuation or pending background-job delivery keeps `running`)
+- `session_shutdown` -> `off`
+
+omp auto-loads extensions from `~/.omp/agent/extensions/`. Symlink the file so it keeps using the scripts next to it:
+
+```bash
+mkdir -p ~/.omp/agent/extensions
+ln -s ~/.tmux/plugins/tmux-agent-indicator/plugins/omp-tmux-agent-indicator.ts ~/.omp/agent/extensions/tmux-agent-indicator.ts
+```
+
+A copied file falls back to `$TMUX_AGENT_INDICATOR_DIR`, then `~/.tmux/plugins/tmux-agent-indicator`. Add `omp` to `@agent-indicator-processes` and `@agent-indicator-icons` to show its icon before the first event.
 
 ## License
 

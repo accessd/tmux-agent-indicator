@@ -33,7 +33,7 @@ jobs:
         run: shellcheck -x -S warning agent-indicator.tmux scripts/*.sh install.sh setup.sh tests/*.sh tests/lib/*.sh
 
       - name: Check Python syntax
-        run: python3 -m py_compile scripts/agent-limits.py
+        run: python3 -m py_compile scripts/agent-limits.py scripts/agent-relay.py
 
   test:
     runs-on: ubuntu-latest
@@ -45,7 +45,23 @@ jobs:
       - name: Install test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes ripgrep tmux
+          sudo apt-get install --yes tmux
 
       - name: Run tests
         run: ./tests/run-all.sh
+
+  nix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Check flake
+        run: nix flake check --print-build-logs
+
+      - name: Build package
+        run: nix build .#default --print-build-logs --no-link

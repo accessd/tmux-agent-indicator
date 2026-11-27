@@ -21,7 +21,7 @@ first_frame="$(wait_for_non_empty_env "TMUX_AGENT_ANIMATION_FRAME" 20 0.05 || tr
 assert_non_empty "$first_frame" "animation frame should be set while running"
 
 indicator_output="$(run_indicator_capture "$PANE")"
-printf '%s' "$indicator_output" | rg -q "━" || fail \
+printf '%s' "$indicator_output" | grep -q "━" || fail \
     "status indicator should include animation bar while running"
 
 changed=0

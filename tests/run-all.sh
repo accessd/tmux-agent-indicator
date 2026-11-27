@@ -4,15 +4,12 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-tests=(
-    "$ROOT_DIR/tests/test-agent-limits.sh"
-    "$ROOT_DIR/tests/test-state-transitions.sh"
-    "$ROOT_DIR/tests/test-indicator-output.sh"
-    "$ROOT_DIR/tests/test-pane-style-preserves-focus.sh"
-    "$ROOT_DIR/tests/test-focus-reset-done.sh"
-    "$ROOT_DIR/tests/test-window-title-reset.sh"
-    "$ROOT_DIR/tests/test-running-animation.sh"
-)
+# Every tests/test-*.sh runs, in sorted order; the first failure stops the run.
+tests=("$ROOT_DIR"/tests/test-*.sh)
+if [ ! -e "${tests[0]}" ]; then
+    echo "FAIL: no tests found in $ROOT_DIR/tests"
+    exit 1
+fi
 
 for test_script in "${tests[@]}"; do
     echo "==> $(basename "$test_script")"
