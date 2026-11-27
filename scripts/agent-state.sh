@@ -9,14 +9,6 @@ Usage: agent-state.sh --agent <name> --state <running|needs-input|done|off>
 EOF
 }
 
-if ! command -v tmux >/dev/null 2>&1 || [ -z "${TMUX:-}" ]; then
-    exit 0
-fi
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/state-lib.sh
-source "$SCRIPT_DIR/state-lib.sh"
-
 # Style panes via the pane-scoped window-style option rather than
 # `select-pane -P`: select-pane also makes the target pane the active pane,
 # which steals focus when the styled pane shares the user's current window.
@@ -295,6 +287,59 @@ case "$state" in
         exit 1
         ;;
 esac
+
+# Hooks must never hang the agent, e.g. on a stalled connection.
+with_timeout() {
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 3 "$@"
+    else
+        "$@"
+    fi
+}
+
+# On a host reached through agent-ssh.sh, send the state to the client's pane.
+# Inside tmux on that host, the session environment holds the socket of the
+# connection that attached last (with LC_TMUX_AGENT_SOCKET in
+# update-environment), which outlives the pane's own copy after a reconnect.
+# Runs before state-lib.sh is sourced: hosts without tmux may only have bash 3.
+forward_to_ssh_client() {
+    local socket="${LC_TMUX_AGENT_SOCKET:-}" session_value message
+    [ -n "$socket" ] || return 0
+    if [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ]; then
+        session_value=$(tmux show-environment -t "$TMUX_PANE" LC_TMUX_AGENT_SOCKET 2>/dev/null || true)
+        case "$session_value" in
+            LC_TMUX_AGENT_SOCKET=*) socket="${session_value#*=}" ;;
+            -LC_TMUX_AGENT_SOCKET) socket="" ;;
+        esac
+    fi
+    [ -S "$socket" ] || return 0
+
+    message="$agent $state"
+    if command -v socat >/dev/null 2>&1; then
+        printf '%s\n' "$message" | with_timeout socat -u - "UNIX-CONNECT:$socket" >/dev/null 2>&1 || true
+    elif command -v python3 >/dev/null 2>&1; then
+        with_timeout python3 -c '
+import socket, sys
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.settimeout(3)
+s.connect(sys.argv[1])
+s.sendall((sys.argv[2] + "\n").encode())
+s.close()
+' "$socket" "$message" >/dev/null 2>&1 || true
+    elif command -v nc >/dev/null 2>&1; then
+        printf '%s\n' "$message" | with_timeout nc -w 3 -U "$socket" >/dev/null 2>&1 || true
+    fi
+}
+
+forward_to_ssh_client
+
+if ! command -v tmux >/dev/null 2>&1 || [ -z "${TMUX:-}" ]; then
+    exit 0
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/state-lib.sh
+source "$SCRIPT_DIR/state-lib.sh"
 
 agent_env_load
 

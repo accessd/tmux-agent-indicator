@@ -26,12 +26,13 @@ tmuxPlugins.mkTmuxPlugin {
   # agent-limits.sh looks python3 up on PATH, which a NixOS profile may not
   # have; pin it to the store interpreter. --replace-fail makes the build fail
   # if the script stops matching, instead of silently shipping an unpinned one.
+  # agent-relay.py (started by agent-ssh.sh) is pinned through its shebang.
   buildInputs = [ python3 ];
   postInstall = ''
     substituteInPlace "$target/scripts/agent-limits.sh" \
       --replace-fail 'command -v python3' 'command -v ${python3.interpreter}' \
       --replace-fail 'exec python3 ' 'exec ${python3.interpreter} '
-    patchShebangs --host "$target/scripts/agent-limits.py"
+    patchShebangs --host "$target/scripts/agent-limits.py" "$target/scripts/agent-relay.py"
   '';
 
   meta = {

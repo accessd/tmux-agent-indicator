@@ -37,6 +37,7 @@ Run individual checks:
 ./tests/test-empty-value-semantics.sh    # '' skips a property, 'default' resets it
 ./tests/test-running-clean-slate.sh     # running resets stale done/needs-input styling; fast path
 ./tests/test-hook-dedupe.sh             # reload replaces hooks from any install path
+./tests/test-ssh-relay.sh              # remote states reach the ssh pane; malformed ones dropped; cleared on exit
 ```
 
 Check live provider limits without the tmux cache:
@@ -185,6 +186,12 @@ rm -f /tmp/agent-indicator.out
    - With `@agent-indicator-reset-on-focus on`, done pane styling clears when focusing pane/window.
 4. Validate empty-value semantics (`set -g @agent-indicator-done-bg ''` should skip background changes).
 5. Validate status icon appears when agent state/process is active.
+6. Agents over SSH (needs a host with the plugin installed, see README "Agents over SSH"):
+   - In a pane, run `scripts/agent-ssh.sh <host>`, then on the host run
+     `~/.tmux/plugins/tmux-agent-indicator/scripts/agent-state.sh --agent claude --state needs-input`.
+     The local pane shows `needs-input` styling and notification.
+   - `echo $LC_TMUX_AGENT_SOCKET` on the host prints `/tmp/tmux-agent-indicator-<random>.sock`; empty means sshd dropped it (`AcceptEnv`) or a `ControlMaster` without `SendEnv LC_TMUX_AGENT_SOCKET` carried the session.
+   - Exit the ssh session: the pane's agent styling is cleared.
 
 Optional screenshot capture:
 

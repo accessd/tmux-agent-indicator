@@ -9,7 +9,8 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 type State = "running" | "needs-input" | "done" | "off";
 
 export default function tmuxAgentIndicator(pi: ExtensionAPI) {
-	if (!process.env.TMUX) return;
+	// Outside tmux only a host reached through agent-ssh.sh can show states.
+	if (!process.env.TMUX && !process.env.LC_TMUX_AGENT_SOCKET) return;
 
 	// The checkout this file lives in (when symlinked from it), then the plugin
 	// tmux loaded, then the TPM default.

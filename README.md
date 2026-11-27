@@ -36,6 +36,7 @@ Window title and active-border styles are shared by every pane of a window. With
 - Knight Rider animation during `running` state
 - Deferred pane reset: keep pane colors until focus, not when the hook fires
 - Process detection fallback for agents that don't fire hooks
+- Agents on remote hosts over SSH, shown in the pane you connected from
 - Tmux display-message notifications on state transitions
 
 ## Requirements
@@ -440,6 +441,31 @@ To integrate any agent that does not have built-in hook support, call `agent-sta
 ```
 
 `--state off` always resets pane background and border immediately. `--state running` also clears leftover `done`/`needs-input` styling of its pane, so you don't need to send `off` before it. Repeated `running` reports for a pane that is already running return right away, so you can send them after every tool call.
+
+Agents on another machine reach the pane through [Agents over SSH](#agents-over-ssh).
+
+## Agents over SSH
+
+Agents running on another machine can drive the pane you ssh from. Connect with `scripts/agent-ssh.sh` instead of `ssh`; it takes the same arguments:
+
+```bash
+alias ssh="$HOME/.tmux/plugins/tmux-agent-indicator/scripts/agent-ssh.sh"
+```
+
+With the Home Manager module the path is `${config.programs.tmux.agentIndicator.dir}/scripts/agent-ssh.sh`.
+
+Install the plugin on the remote host too: `install.sh` there sets up the agent hooks (tmux is not needed on that host). The hooks call `agent-state.sh`, which sends each state back over the SSH connection, so the local pane gets the same border, window title, status icon and notifications as a local agent. When the connection ends, the pane's agent state is cleared. Outside tmux the wrapper is plain `ssh`.
+
+How it works: `agent-ssh.sh` starts a relay (`scripts/agent-relay.py`, Python 3) on a private local socket, forwards a random socket in the remote `/tmp` to it (`ssh -R`, the remote socket is mode 0600) and passes that path in `LC_TMUX_AGENT_SOCKET`. The relay applies only well-formed `<agent> <state>` lines, and only to the pane the connection runs in.
+
+Requirements and caveats:
+
+- The remote sshd must accept `LC_TMUX_AGENT_SOCKET`. Debian and Ubuntu ship `AcceptEnv LANG LC_*`; elsewhere add `AcceptEnv LC_TMUX_AGENT_SOCKET` to `sshd_config`.
+- Unix socket forwarding must be allowed (`AllowStreamLocalForwarding`, on by default). If it is not, ssh prints `remote port forwarding failed` and the session works without agent states.
+- The remote host sends states with `socat`, `python3` or `nc -U`, whichever is found first.
+- With `ControlMaster`, a multiplexed session only receives the environment variables the master connection's `SendEnv` allows. Add `SendEnv LC_TMUX_AGENT_SOCKET` to the host in `~/.ssh/config` unless `/etc/ssh/ssh_config` already sends `LC_*` (Debian and Ubuntu do).
+- tmux on the remote host: panes inherit `LC_TMUX_AGENT_SOCKET` from the connection that started the tmux server. Add `set -ga update-environment LC_TMUX_AGENT_SOCKET` to the remote `~/.tmux.conf` so that, after you reattach from a new connection, existing panes report through it. Every agent in that remote session reports to the one local pane; the latest state wins. If the remote tmux loads the plugin too, it shows the states as well.
+- sshd does not delete forwarded sockets, so each connection leaves an unused socket file in the remote `/tmp` until it is cleaned.
 
 ## Hook Templates
 

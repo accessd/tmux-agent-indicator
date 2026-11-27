@@ -5,7 +5,8 @@ This repository is a tmux plugin written in Bash.
 
 - `agent-indicator.tmux`: plugin entrypoint; injects `#{agent_indicator}` and registers focus/window/prune hooks.
 - `scripts/state-lib.sh`: shared helpers sourced by the state scripts (option/env access, state defaults, window-style aggregation, dead-pane pruning).
-- `scripts/agent-state.sh`: state machine for `running`, `needs-input`, `done`, `off`; applies/restores pane, border, and window-title styles.
+- `scripts/agent-state.sh`: state machine for `running`, `needs-input`, `done`, `off`; applies/restores pane, border, and window-title styles; on a host reached through `agent-ssh.sh`, forwards the state to the client's pane.
+- `scripts/agent-ssh.sh`, `scripts/agent-relay.py`: ssh wrapper and local relay that apply states from agents on the remote host to the pane running ssh.
 - `scripts/pane-focus-in.sh`: clears deferred `done` styling when pane/window focus changes.
 - `scripts/prune-panes.sh`: drops state of closed panes/windows (pane-exited, pane-died, after-kill-pane, window-unlinked hooks).
 - `scripts/indicator.sh`: status segment renderer (icons + process/state detection).
